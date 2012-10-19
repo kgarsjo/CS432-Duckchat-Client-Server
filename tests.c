@@ -1,46 +1,31 @@
-#include <CUnit/CUnit.h>
-#include <CUnit/Basic.h>
+#include <gtest/gtest.h>
 
-#define true 0
-#define false 1
-
-int init_suite1(void) {
-	return 0;
+TEST(SanityCheckGtest, T1) {
+	EXPECT_EQ(1, 1);
 }
 
-int clean_suite1(void) {
-	return 0;
+TEST(SanityCheckGtest, T2) {
+	EXPECT_EQ(2, 2);
 }
 
-void testFunct(void) {
-	CU_ASSERT(true == true);
+
+class ClientTests : public ::testing::Test {
+
+};
+
+TEST_F(ClientTests, Login) {
+
 }
 
-void testFunct2(void) {
-	CU_ASSERT(false == false);
+TEST_F(ClientTests, LoginNullString) {
+
 }
 
-int main() {
-	CU_pSuite pSuite= NULL;
-	
-	if (CUE_SUCCESS != CU_initialize_registry()) {
-		return CU_get_error();
-	}
+TEST_F(ClientTests, LoginEmptyString) {
 
-	pSuite= CU_add_suite("Suite1", init_suite1, clean_suite1);
-	if (pSuite == NULL) {
-		CU_cleanup_registry();
-		return CU_get_error();
-	}
+}
 
-	if ((NULL == CU_add_test(pSuite, "test1", testFunct)) ||
-	(NULL == CU_add_test(pSuite, "test2", testFunct2))) {
-		CU_cleanup_registry();
-		return CU_get_error();
-	}
-
-	CU_basic_set_mode(CU_BRM_VERBOSE);
-	CU_basic_run_tests();
-	CU_cleanup_registry();
-	return CU_get_error();
+int main(int argc, char **argv) {
+	::testing::InitGoogleTest(&argc, argv);
+	return RUN_ALL_TESTS();
 }
