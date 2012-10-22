@@ -22,7 +22,7 @@ logging: logging.c
 
 # Made separately from [all]; requires google C++ testing libs
 tests:	tests.c
-	$(CC) tests.c $(TESTLIBS) $(CFLAGS) -o tests
+	$(CC) tests.c client.c $(TESTLIBS) $(CFLAGS) -o tests
 
 linux: logging
 	$(CC) client.c $(LINUXLIBS) $(CFLAGS) -o client
