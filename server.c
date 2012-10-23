@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "duckchat.h"
+#include "server.h"
 
 #define true 1
 #define false 0
@@ -26,7 +27,11 @@
 // :: GLOBAL VALUES :: //
 int sockfd= 0;
 struct addrinfo *servinfo= NULL;
-char buf[1024];
+struct user_profile *users= NULL;
+char buf[1024];i
+
+
+// :: CONSTANT VALUES :: //
 const char* const REQ_STR[8] = {"REQ_LOGIN",
 								"REQ_LOGOUT",
 								"REQ_JOIN",
@@ -41,6 +46,8 @@ const char* const TXT_STR[4] = {"TXT_SAY",
 								"TXT_WHO",
 								"TXT_ERROR"
 								}; 
+
+
 
 // :: FUNCTION PROTOTYPES :: //
 void log(FILE*, const char*, const char*, const char*);
@@ -76,6 +83,36 @@ int main() {
 	freeaddrinfo(servinfo);
 
 	return 0;
+}
+
+
+int addUser(struct user_profile *user) {
+	if (users == NULL) {
+		users= user;
+		return true;
+	}
+
+	struct user_profile *current= users;
+	do {
+		if ( strcmp(current->username, user->username) == 0 ) {
+			return false;
+		}
+		} while (current->next != NULL);
+}
+
+
+char *getRequest() {
+	char *request= (char*) malloc(BUFSIZE * sizeof(char));
+	struct sockaddr src_addr;
+	socklen_t addrlen;
+	if ((numbytes= recvfrom(sockfd, request, BUFSIZE - 1, 0, &src_addr, &addrlen)) == -1) {
+		perror("recvfrom");
+		return NULL;
+	}
+	
+	
+
+	return request;
 }
 
 
@@ -129,6 +166,11 @@ char *new_timeStr() {
 	char *timeStr= (char*) malloc(TIMESIZE * sizeof(char));
 	strftime(timeStr, TIMESIZE, "%X %x", timeinfo);
 	return timeStr;
+}
+
+
+int removeUser(struct sockaddr src_addr) {
+
 }
 
 
