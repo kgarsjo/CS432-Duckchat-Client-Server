@@ -1,13 +1,18 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <string.h>
+#include <time.h>
+
+#include "duckchat.h"
 
 #define true 1
 #define false 0
 #define BUFSIZE 1024
+#define TIMESIZE 100
 #define SRV_PORT "2222"
 
 #define ANSI_COLOR_RED 		"\x1b[31m"
@@ -18,39 +23,119 @@
 #define ANSI_COLOR_CYAN		"\x1b[36m"
 #define ANSI_COLOR_RESET	"\x1b[0m"
 
+// :: GLOBAL VALUES :: //
 int sockfd= 0;
 struct addrinfo *servinfo= NULL;
 char buf[1024];
+const char* const REQ_STR[8] = {"REQ_LOGIN",
+								"REQ_LOGOUT",
+								"REQ_JOIN",
+								"REQ_LEAVE",
+								"REQ_SAY",
+								"REQ_LIST",
+								"REQ_WHO",
+								"REQ_KEEP_ALIVE"
+								};
+const char* const TXT_STR[4] = {"TXT_SAY",
+								"TXT_LIST",
+								"TXT_WHO",
+								"TXT_ERROR"
+								}; 
 
-void log(FILE*, char*, char*);
+// :: FUNCTION PROTOTYPES :: //
+void log(FILE*, const char*, const char*, const char*);
+void logInfo(const char*);
 void logReceived(int, char*);
 void logSent(char*);
+char *new_timeStr();
 int setupSocket();
 
+
+// :: PROGRAM ENTRY :: //
 int main() {
+	logInfo("Starting Duckchat Server");
 
 	setupSocket();
-	
+	logInfo("Sockets initialized");
+	logInfo("Waiting for requests");	
+
 	int numbytes= 0;
 	while (true) {
+
+	// program logic goes here
+		struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
 		if ((numbytes= recvfrom(sockfd, buf, 1024-1, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
-			buf[numbytes]= '\0';			
+			buf[numbytes]= '\0';
+			memcpy(req, buf, BUFSIZE);
 			logReceived(buf[0], buf + 1);
+			break;
 		}
+		free(req);
 	}
+
+	freeaddrinfo(servinfo);
 
 	return 0;
 }
 
-void log(FILE *out, char *header, char *msg, char *color=ANSI_COLOR_RESET) {
-	fprintf(out, "%s%s %s%s\n", color, header, msg, ANSI_COLOR_RESET);
+
+/*
+	log - Logs the given output to the specified file stream, with formatting.
+		out:		The file stream to log to
+		header:		The log message header to print
+		msg:		The message to log
+		[color]:	The optional ANSI color to use
+*/
+void log(FILE *out, const char *header, const char *msg, const char *color=ANSI_COLOR_RESET) {
+	char *timeStr= new_timeStr();
+	fprintf(out, "%s%s [%s] %s%s\n", color, header, timeStr, msg, ANSI_COLOR_RESET);
+	free(timeStr);
 }
 
+
+/*
+	logInfo - Logs the given informational message.
+		msg:		The message to log
+*/
+void logInfo(const char *msg) {
+	log(stdout, "[INFO] ::", msg, ANSI_COLOR_GREEN);
+}
+
+
+/*
+	logReceived - Logs a message received from the clients.
+		type:		The request type
+		msg:		The remainder of the request
+*/
 void logReceived(int type, char *msg) {
-	snprintf(msg, BUFSIZE, "req=%d, msg=\"%s\"", type, msg);
-	log(stdout, "[RECV] ::", msg, ANSI_COLOR_CYAN);
+	char *format= (char*) malloc(BUFSIZE * sizeof(char));
+	snprintf(format, BUFSIZE, "[%s] \"%s\"", REQ_STR[type], msg);
+	log(stdout, "[RECV] ::", format, ANSI_COLOR_CYAN);
+	free(format);
 }
 
+/*
+	new_timeStr - Creates a new string giving the time of day.
+	Returns: A new heap-allocated char*.
+
+	NOTE: The caller is obligated to free this returned value.
+*/
+char *new_timeStr() {
+	time_t rawtime;
+	struct tm *timeinfo;
+	time(&rawtime);
+	timeinfo= localtime(&rawtime);
+
+	char *timeStr= (char*) malloc(TIMESIZE * sizeof(char));
+	strftime(timeStr, TIMESIZE, "%X %x", timeinfo);
+	return timeStr;
+}
+
+
+/*
+	setupSocket - Creates the central socket for use by the server.
+	Returns: true or false, regarding socket creation success.
+*/
 int setupSocket() {
 	int result= 0;
 

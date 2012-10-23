@@ -7,7 +7,6 @@
 
 #include "client.h"
 #include "duckchat.h"
-#include "logging.h"
 
 #define true 1
 #define false 0
@@ -34,10 +33,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	// Begin main loop
-	while (true) {
-	//	sendto(sockfd, "test\0", 5, 0); 
-	}
+	freeaddrinfo(servinfo);
 
 	return 0;
 }
