@@ -8,7 +8,7 @@ struct user_profile {
 	struct user_profile *next;	// The next user profile
 };
 
-int addUser(struct user_profile user);`
+int addUser(struct user_profile user);
 int removeUser(struct sockaddr src_addr);
 int removeUser(char *username);
 

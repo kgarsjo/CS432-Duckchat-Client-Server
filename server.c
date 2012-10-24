@@ -28,7 +28,7 @@
 int sockfd= 0;
 struct addrinfo *servinfo= NULL;
 struct user_profile *users= NULL;
-char buf[1024];i
+char buf[1024];
 
 
 // :: CONSTANT VALUES :: //
@@ -97,7 +97,9 @@ int addUser(struct user_profile *user) {
 		if ( strcmp(current->username, user->username) == 0 ) {
 			return false;
 		}
-		} while (current->next != NULL);
+	} while (current->next != NULL);
+
+	return true;
 }
 
 
@@ -105,6 +107,8 @@ char *getRequest() {
 	char *request= (char*) malloc(BUFSIZE * sizeof(char));
 	struct sockaddr src_addr;
 	socklen_t addrlen;
+	int numbytes= 0;
+
 	if ((numbytes= recvfrom(sockfd, request, BUFSIZE - 1, 0, &src_addr, &addrlen)) == -1) {
 		perror("recvfrom");
 		return NULL;
@@ -151,6 +155,7 @@ void logReceived(int type, char *msg) {
 	free(format);
 }
 
+
 /*
 	new_timeStr - Creates a new string giving the time of day.
 	Returns: A new heap-allocated char*.
@@ -170,7 +175,7 @@ char *new_timeStr() {
 
 
 int removeUser(struct sockaddr src_addr) {
-
+	return false;
 }
 
 
