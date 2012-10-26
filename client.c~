@@ -17,7 +17,7 @@
 int sockfd= 0;
 struct addrinfo *servinfo= NULL;
 struct sockaddr_in *servaddr= NULL;
-char activeChannel[CHANNEL_MAX];
+char msgBuf[BUFSIZE];
 
 
 // :: Function Prototypes :: //
@@ -43,8 +43,6 @@ int main(int argc, char** argv) {
 
 	// Set the terminal to raw mode
 	//raw_mode();
-
-	memset(activeChannel, '\0', CHANNEL_MAX);
 
 	if (setupSocket(argv[1], argv[2]) != true) {
 		//cooked_mode();
@@ -72,20 +70,17 @@ int main(int argc, char** argv) {
 int msg_exit() {
 	struct request_logout *req= (struct request_logout*) malloc(sizeof(struct request_logout));
 	req->req_type= htonl(REQ_LOGOUT);
-
-	sendMessage((struct request*)req, sizeof(struct request_logout));
+	sendMessage((struct request*)req, sizeof(struct request_logout));i
+	
 	free(req);
 	return -1;
 }
 
 int msg_join(char *channel) {
-	if (channel == NULL) {
-		return false;
-	}
 	struct request_join *req= (struct request_join*) malloc(sizeof(struct request_join));
 	req->req_type= htonl(REQ_JOIN);
 	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
-	strncpy(activeChannel, channel, CHANNEL_MAX - 1);
+	req->req_channel[CHANNEL_MAX]= '\0';
 	
 	int result= sendMessage( (struct request*) req, sizeof(struct request_join));
 	free(req);
@@ -93,25 +88,11 @@ int msg_join(char *channel) {
 }
 
 int msg_leave(char *channel) {
-	if (channel == NULL) {
-		return false;
-	}
-	struct request_leave *req = (struct request_leave*) malloc(sizeof(struct request_leave));
-	req->req_type= htonl(REQ_LEAVE);
-	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
-
-	int result= sendMessage( (struct request*) req, sizeof(struct request_leave));
-	free(req);
-	return result;
+	return false;
 }
 
 int msg_list() {
-	struct request_list *req= (struct request_list*) malloc(sizeof(struct request_list));
-	req->req_type= htonl(REQ_LIST);
-
-	int result= sendMessage( (struct request*) req, sizeof(struct request_leave));
-	free(req);
-	return result;
+	return false;
 }
 
 int msg_login(char *name) {
@@ -124,31 +105,12 @@ int msg_login(char *name) {
 	return result;
 }
 
-int msg_say(char *msg) {
-	if (msg == NULL || strcmp(activeChannel, "") == 0) {
-		return false;
-	}
-	struct request_say *req= (struct request_say*) malloc(sizeof(struct request_say));
-	req->req_type= htonl(REQ_SAY);
-	strncpy(req->req_channel, activeChannel, CHANNEL_MAX - 1);
-	strncpy(req->req_text, msg, SAY_MAX - 1);
-	
-	int result= sendMessage( (struct request*) req, sizeof(struct request_say));
-	free(req);
-	return result;
+int msg_switch(char *channel) {
+	return false;
 }
 
 int msg_who(char *channel) {
-	if (channel == NULL) {
-		return false;
-	}
-	struct request_who *req= (struct request_who*) malloc(sizeof(struct request_who));
-	req->req_type= htonl(REQ_WHO);
-	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
-
-	int result= sendMessage( (struct request*) req, sizeof(struct request_who));
-	free(req);
-	return result;
+	return false;
 }
 
 char *new_inputString() {
@@ -161,30 +123,32 @@ char *new_inputString() {
 }
 
 int parseInput(char *input) {
-	const char *DELIM= " \n";
-	char *command= strtok(input, DELIM);
+	char *command= strtok(input, " ");
 	if (command == NULL) {
 		printf("You shouldn't see this shit");
 		return -1;
 	}
 	
+	// Remove trailing newline
+	char *newline= strchr(command, '\n');
+	*newline= '\0';
+
 	if (0 == strcmp(command, "/exit")) {
 		return msg_exit();
 	} else if (0 == strcmp(command, "/join")) {
-		char *channel= strtok(NULL, DELIM);
+		char *channel= strtok(input, " ");
 		return msg_join(channel);
 	} else if (0 == strcmp(command, "/leave")) {
-		char *channel= strtok(NULL, DELIM);
+		char *channel= strtok(input, " ");
 		return msg_leave(channel);
 	} else if (0 == strcmp(command, "/list")) {
-		return msg_list();
+		
 	} else if (0 == strcmp(command, "/who")) {
-		char *channel= strtok(NULL, DELIM);
-		return msg_who(channel);
+
 	} else if (0 == strcmp(command, "/switch")) {
-		// Do nothing for now
-	} else { /* /say */ 
-		return msg_say(input);
+
+	} else {
+
 	}
 	return false;
 }

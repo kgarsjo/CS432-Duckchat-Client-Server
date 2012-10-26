@@ -56,6 +56,7 @@ void logReceived(int, char*);
 void logSent(char*);
 char *new_timeStr();
 int setupSocket();
+int switchRequest(struct request*);
 
 
 // :: PROGRAM ENTRY :: //
@@ -71,11 +72,8 @@ int main() {
 
 	// program logic goes here
 		struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
-		if ((numbytes= recvfrom(sockfd, buf, 1024-1, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
-			buf[numbytes]= '\0';
-			memcpy(req, buf, BUFSIZE);
-			logReceived(buf[0], buf + 1);
-			break;
+		if ((numbytes= recvfrom(sockfd, req, 1024-1, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
+			switchRequest(req);
 		}
 		free(req);
 	}
@@ -103,20 +101,12 @@ int addUser(struct user_profile *user) {
 }
 
 
-char *getRequest() {
-	char *request= (char*) malloc(BUFSIZE * sizeof(char));
+struct request *getRequest() {
 	struct sockaddr src_addr;
 	socklen_t addrlen;
 	int numbytes= 0;
 
-	if ((numbytes= recvfrom(sockfd, request, BUFSIZE - 1, 0, &src_addr, &addrlen)) == -1) {
-		perror("recvfrom");
-		return NULL;
-	}
-	
-	
-
-	return request;
+	return NULL;
 }
 
 
@@ -173,6 +163,46 @@ char *new_timeStr() {
 	return timeStr;
 }
 
+int recv_join(struct request_join *req) {
+	logReceived(REQ_JOIN, req->req_channel);
+	return true;
+}
+
+int recv_keepAlive(struct request_keep_alive *req) {
+	return true;
+}
+
+int recv_leave(struct request_leave *req) {
+	logReceived(REQ_LEAVE, req->req_channel);
+	return true;
+}
+
+int recv_list(struct request_list *req) {
+	logReceived(REQ_LIST, NULL);
+	return true;
+}
+
+int recv_login(struct request_login *req) {
+	logReceived(REQ_LOGIN, req->req_username);
+	return true;
+}
+
+int recv_logout(struct request_logout *req) {
+	logReceived(REQ_LOGOUT, NULL);
+}
+
+int recv_say(struct request_say *req) {
+	int size= strlen(req->req_channel) + strlen(req->req_text) + 3;
+	char *msg= (char*) malloc(size);
+	snprintf(msg, size, "<%s> %s", req->req_channel, req->req_text);
+	logReceived(REQ_SAY, msg);
+	free(msg);
+	return true;
+}
+
+int recv_who(struct request_who *req) {
+	logReceived(REQ_WHO, req->req_channel);
+}
 
 int removeUser(struct sockaddr src_addr) {
 	return false;
@@ -212,4 +242,27 @@ int setupSocket() {
 	}
 
 	return true;
+}
+
+int switchRequest(struct request* req) {
+	switch( htonl(req->req_type) ) {
+	case REQ_LOGIN:
+		return recv_login( (struct request_login*) req );
+	case REQ_LOGOUT:
+		return recv_logout( (struct request_logout*) req );
+	case REQ_JOIN:
+		return recv_join( (struct request_join*) req );
+	case REQ_LEAVE:
+		return recv_leave( (struct request_leave*) req );
+	case REQ_SAY:
+		return recv_say( (struct request_say*) req );
+	case REQ_LIST:
+		return recv_list( (struct request_list*) req );
+	case REQ_WHO:
+		return recv_who( (struct request_who*) req );
+	case REQ_KEEP_ALIVE:
+		return recv_keepAlive( (struct request_keep_alive*) req );
+	default:
+		return false;
+	}
 }

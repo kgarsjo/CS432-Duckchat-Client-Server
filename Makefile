@@ -14,7 +14,7 @@ server: server.c
 	$(CC) server.c $(SOLARISLIBS) $(CFLAGS) -o server
 
 linux:
-	$(CC) client.c $(LINUXLIBS) $(CFLAGS) -o client
+	$(CC) client.c raw.c $(LINUXLIBS) $(CFLAGS) -o client
 	$(CC) server.c $(LINUXLIBS) $(CFLAGS) -o server
 
 clean:
