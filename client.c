@@ -6,6 +6,7 @@
 #include <netdb.h>
 #include <string.h>
 
+#include "client.h"
 #include "duckchat.h"
 #include "raw.h"
 
@@ -18,7 +19,7 @@ int sockfd= 0;
 struct addrinfo *servinfo= NULL;
 struct sockaddr_in *servaddr= NULL;
 char activeChannel[CHANNEL_MAX];
-
+struct channel_list *channelList= NULL;
 
 // :: Function Prototypes :: //
 int msg_exit();
@@ -69,6 +70,16 @@ int main(int argc, char** argv) {
 	return 0;
 }
 
+int handleSwitch(const char *channel) {
+	if (addChannel(&channelList, channel) == false) { 
+		strncpy(activeChannel, channel, CHANNEL_MAX);
+		return true;
+	} else {
+		removeChannel(&channelList, channel);
+		return false;
+	}
+}
+
 int msg_exit() {
 	struct request_logout *req= (struct request_logout*) malloc(sizeof(struct request_logout));
 	req->req_type= htonl(REQ_LOGOUT);
@@ -85,9 +96,12 @@ int msg_join(char *channel) {
 	struct request_join *req= (struct request_join*) malloc(sizeof(struct request_join));
 	req->req_type= htonl(REQ_JOIN);
 	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
-	strncpy(activeChannel, channel, CHANNEL_MAX - 1);
 	
 	int result= sendMessage( (struct request*) req, sizeof(struct request_join));
+	if (result == true) {
+		addChannel(&channelList, channel);
+	}
+	strncpy(activeChannel, channel, CHANNEL_MAX - 1);
 	free(req);
 	return result;
 }
@@ -101,6 +115,9 @@ int msg_leave(char *channel) {
 	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
 
 	int result= sendMessage( (struct request*) req, sizeof(struct request_leave));
+	if (result == true) {
+		removeChannel(&channelList, channel);
+	}
 	free(req);
 	return result;
 }
@@ -162,31 +179,37 @@ char *new_inputString() {
 
 int parseInput(char *input) {
 	const char *DELIM= " \n";
-	char *command= strtok(input, DELIM);
+	char *tok= (char*) malloc(sizeof(char)*(strlen(input) + 1));
+	strcpy(tok, input);
+	char *command= strtok(tok, DELIM);
 	if (command == NULL) {
 		printf("You shouldn't see this shit");
 		return -1;
 	}
-	
+
+	int result= false;
 	if (0 == strcmp(command, "/exit")) {
-		return msg_exit();
+		result= msg_exit();
 	} else if (0 == strcmp(command, "/join")) {
 		char *channel= strtok(NULL, DELIM);
-		return msg_join(channel);
+		result= msg_join(channel);
 	} else if (0 == strcmp(command, "/leave")) {
 		char *channel= strtok(NULL, DELIM);
-		return msg_leave(channel);
+		result= msg_leave(channel);
 	} else if (0 == strcmp(command, "/list")) {
-		return msg_list();
+		result= msg_list();
 	} else if (0 == strcmp(command, "/who")) {
 		char *channel= strtok(NULL, DELIM);
-		return msg_who(channel);
+		result= msg_who(channel);
 	} else if (0 == strcmp(command, "/switch")) {
-		// Do nothing for now
+		char *channel= strtok(NULL, DELIM);
+		result= handleSwitch(channel);
 	} else { /* /say */ 
-		return msg_say(input);
+		result= msg_say(input);
 	}
-	return false;
+
+	free(tok);
+	return result;
 }
 
 int sendMessage(struct request *req, int len) {
