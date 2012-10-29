@@ -178,7 +178,7 @@ int recv_leave(struct request_leave *req) {
 }
 
 int recv_list(struct request_list *req) {
-	logReceived(REQ_LIST, NULL);
+	logReceived(REQ_LIST, "");
 	return true;
 }
 
@@ -188,7 +188,7 @@ int recv_login(struct request_login *req) {
 }
 
 int recv_logout(struct request_logout *req) {
-	logReceived(REQ_LOGOUT, NULL);
+	logReceived(REQ_LOGOUT, "");
 }
 
 int recv_say(struct request_say *req) {
