@@ -170,9 +170,13 @@ int msg_who(char *channel) {
 
 char *new_inputString() {
 	char *line= (char*) malloc(BUFSIZE*sizeof(char));
-	size_t size= BUFSIZE;
-	int numbits= getline(&line, &size, stdin);
-	line[numbits]= '\0';
+	int i= 0;
+	char c= getchar(stdin);
+	for (i=0; c != '\n' && i < BUFSIZE; i++, c= getchar(stdin)) {
+		line[i]= c;
+	}
+
+	line[i]= '\0';
 
 	return line;
 }
