@@ -171,8 +171,8 @@ int msg_who(char *channel) {
 char *new_inputString() {
 	char *line= (char*) malloc(BUFSIZE*sizeof(char));
 	int i= 0;
-	char c= getchar(stdin);
-	for (i=0; c != '\n' && i < BUFSIZE; i++, c= getchar(stdin)) {
+	char c= getchar();
+	for (i=0; c != '\n' && i < BUFSIZE; i++, c= getchar()) {
 		line[i]= c;
 	}
 
