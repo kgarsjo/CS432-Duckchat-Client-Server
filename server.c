@@ -55,15 +55,21 @@ void logInfo(const char*);
 void logReceived(int, char*);
 void logSent(char*);
 char *new_timeStr();
-int setupSocket();
+int setupSocket(char*, char*);
 int switchRequest(struct request*);
 
 
 // :: PROGRAM ENTRY :: //
-int main() {
+int main(int argc, char **argv) {
+
+	if (argc != 2+1){
+		printf("%s", "usage: hostname port\n");
+		return 1;
+	}
+
 	logInfo("Starting Duckchat Server");
 
-	setupSocket();
+	setupSocket(argv[1], argv[2]);
 	logInfo("Sockets initialized");
 	logInfo("Waiting for requests");	
 
@@ -213,7 +219,7 @@ int removeUser(struct sockaddr src_addr) {
 	setupSocket - Creates the central socket for use by the server.
 	Returns: true or false, regarding socket creation success.
 */
-int setupSocket() {
+int setupSocket(char *addr, char *port) {
 	int result= 0;
 
 	// Setup hints
@@ -224,7 +230,7 @@ int setupSocket() {
 	hints.ai_flags= AI_PASSIVE;
 
 	// Fetch address info struct
-	if ((result= getaddrinfo(NULL, SRV_PORT, &hints, &servinfo)) != 0) {
+	if ((result= getaddrinfo(addr, port, &hints, &servinfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
 		return false;
 	}

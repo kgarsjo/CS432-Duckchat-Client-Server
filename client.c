@@ -20,16 +20,17 @@ int sockfd= 0;
 struct addrinfo *servinfo= NULL;
 struct sockaddr_in *servaddr= NULL;
 char activeChannel[CHANNEL_MAX];
+const char basicChannel[CHANNEL_MAX]= "Common";
 std::set<std::string> channelSet;
 
 // :: Function Prototypes :: //
 int msg_exit();
-int msg_join(char*);
-int msg_leave(char*);
+int msg_join(const char*);
+int msg_leave(const char*);
 int msg_list();
-int msg_login(char*);
-int msg_switch(char*);
-int msg_who(char*);
+int msg_login(const char*);
+int msg_switch(const char*);
+int msg_who(const char*);
 char *new_inputString();
 int parseInput(char*);
 int sendMessage(struct request*, int);
@@ -89,31 +90,31 @@ int msg_exit() {
 	return -1;
 }
 
-int msg_join(char *channel) {
+int msg_join(const char *channel) {
 	if (channel == NULL) {
 		return false;
 	}
 	struct request_join *req= (struct request_join*) malloc(sizeof(struct request_join));
 	req->req_type= htonl(REQ_JOIN);
-	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
+	strncpy(req->req_channel, channel, CHANNEL_MAX);
 	
 	int result= sendMessage( (struct request*) req, sizeof(struct request_join));
 	if (result == true) {
 		std::string str= channel;
 		channelSet.insert(str);
 	}
-	strncpy(activeChannel, channel, CHANNEL_MAX - 1);
+	strncpy(activeChannel, channel, CHANNEL_MAX);
 	free(req);
 	return result;
 }
 
-int msg_leave(char *channel) {
+int msg_leave(const char *channel) {
 	if (channel == NULL) {
 		return false;
 	}
 	struct request_leave *req = (struct request_leave*) malloc(sizeof(struct request_leave));
 	req->req_type= htonl(REQ_LEAVE);
-	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
+	strncpy(req->req_channel, channel, CHANNEL_MAX);
 
 	int result= sendMessage( (struct request*) req, sizeof(struct request_leave));
 	if (result == true) {
@@ -133,37 +134,37 @@ int msg_list() {
 	return result;
 }
 
-int msg_login(char *name) {
+int msg_login(const char *name) {
 	struct request_login *req= (struct request_login*) malloc(sizeof(struct request_login));
 	req->req_type= htonl(REQ_LOGIN);
-	strncpy(req->req_username, name, USERNAME_MAX - 1);
+	strncpy(req->req_username, name, USERNAME_MAX);
 
 	int result= sendMessage( (struct request*) req, sizeof(struct request_login));
 	free(req);
-	return result;
+	return result && msg_join(basicChannel);
 }
 
-int msg_say(char *msg) {
+int msg_say(const char *msg) {
 	if (msg == NULL || strcmp(activeChannel, "") == 0) {
 		return false;
 	}
 	struct request_say *req= (struct request_say*) malloc(sizeof(struct request_say));
 	req->req_type= htonl(REQ_SAY);
-	strncpy(req->req_channel, activeChannel, CHANNEL_MAX - 1);
-	strncpy(req->req_text, msg, SAY_MAX - 1);
+	strncpy(req->req_channel, activeChannel, CHANNEL_MAX);
+	strncpy(req->req_text, msg, SAY_MAX);
 	
 	int result= sendMessage( (struct request*) req, sizeof(struct request_say));
 	free(req);
 	return result;
 }
 
-int msg_who(char *channel) {
+int msg_who(const char *channel) {
 	if (channel == NULL) {
 		return false;
 	}
 	struct request_who *req= (struct request_who*) malloc(sizeof(struct request_who));
 	req->req_type= htonl(REQ_WHO);
-	strncpy(req->req_channel, channel, CHANNEL_MAX - 1);
+	strncpy(req->req_channel, channel, CHANNEL_MAX);
 
 	int result= sendMessage( (struct request*) req, sizeof(struct request_who));
 	free(req);
