@@ -4,9 +4,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <string>
 #include <string.h>
+#include <set>
 
-#include "client.h"
 #include "duckchat.h"
 #include "raw.h"
 
@@ -19,7 +20,7 @@ int sockfd= 0;
 struct addrinfo *servinfo= NULL;
 struct sockaddr_in *servaddr= NULL;
 char activeChannel[CHANNEL_MAX];
-struct channel_list *channelList= NULL;
+std::set<std::string> channelSet;
 
 // :: Function Prototypes :: //
 int msg_exit();
@@ -71,13 +72,12 @@ int main(int argc, char** argv) {
 }
 
 int handleSwitch(const char *channel) {
-	if (addChannel(&channelList, channel) == false) { 
-		strncpy(activeChannel, channel, CHANNEL_MAX);
+	std::set<std::string>::iterator it;
+	if ((it= channelSet.find(channel)) != channelSet.end()) {
+		strncpy(activeChannel, it->c_str(), CHANNEL_MAX);
 		return true;
-	} else {
-		removeChannel(&channelList, channel);
-		return false;
 	}
+	return false;
 }
 
 int msg_exit() {
@@ -99,7 +99,8 @@ int msg_join(char *channel) {
 	
 	int result= sendMessage( (struct request*) req, sizeof(struct request_join));
 	if (result == true) {
-		addChannel(&channelList, channel);
+		std::string str= channel;
+		channelSet.insert(str);
 	}
 	strncpy(activeChannel, channel, CHANNEL_MAX - 1);
 	free(req);
@@ -116,7 +117,8 @@ int msg_leave(char *channel) {
 
 	int result= sendMessage( (struct request*) req, sizeof(struct request_leave));
 	if (result == true) {
-		removeChannel(&channelList, channel);
+		std::string str= channel;
+		channelSet.erase(str);
 	}
 	free(req);
 	return result;

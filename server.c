@@ -72,7 +72,7 @@ int main() {
 
 	// program logic goes here
 		struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
-		if ((numbytes= recvfrom(sockfd, req, 1024-1, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
+		if ((numbytes= recvfrom(sockfd, req, 1024, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
 			switchRequest(req);
 		}
 		free(req);
@@ -192,7 +192,7 @@ int recv_logout(struct request_logout *req) {
 }
 
 int recv_say(struct request_say *req) {
-	int size= strlen(req->req_channel) + strlen(req->req_text) + 3;
+	int size= strlen(req->req_channel) + strlen(req->req_text) + 4;
 	char *msg= (char*) malloc(size);
 	snprintf(msg, size, "<%s> %s", req->req_channel, req->req_text);
 	logReceived(REQ_SAY, msg);
