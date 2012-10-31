@@ -152,6 +152,21 @@ void logReceived(int type, char *msg) {
 	free(format);
 }
 
+int msg_error() {
+
+}
+
+int msg_list() {
+
+}
+
+int msg_say() {
+
+}
+
+int msg_who() {
+
+}
 
 /*
 	new_timeStr - Creates a new string giving the time of day.

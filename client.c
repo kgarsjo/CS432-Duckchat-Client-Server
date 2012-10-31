@@ -82,8 +82,11 @@ int main(int argc, char** argv) {
 			}
 		} else if (FD_ISSET(sockfd, &readfds)) {
 			struct text *txt= (struct text*) malloc(sizeof(struct text) + 1024);
-			switchResponse(txt);
-			free(txt);
+			int numbytes= 0;
+			if ((numbytes= recvfrom(sockfd, txt, 1024, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
+				switchResponse(txt);
+				free(txt);
+			}
 		}
 	} while (parseStatus != -1);
 
@@ -313,6 +316,7 @@ int setupSocket(char *addr, char *port) {
 		}
 		break;
 	}
+	servinfo= p;
 
 	return (p != NULL);
 }
