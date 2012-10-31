@@ -233,7 +233,9 @@ int setupSocket(char *addr, char *port) {
 
 	// Setup hints
 	struct addrinfo hints;
+	struct addrinfo *p;
 	memset(&hints, 0, sizeof hints);
+	hints.ai_family= AF_INET;
 	hints.ai_socktype= SOCK_DGRAM;
 
 	// Fetch address info struct
@@ -243,10 +245,20 @@ int setupSocket(char *addr, char *port) {
 	}
 
 	// Create UDP socket
-	sockfd= socket(servinfo->ai_family, servinfo->ai_socktype, servinfo->ai_protocol);
-	if (sockfd == -1) {
-		perror("socket: ");
-		return false;
+	for (p= servinfo; p != NULL; p= p->ai_next) {
+		sockfd= socket(servinfo->ai_family, servinfo->ai_socktype, servinfo->ai_protocol);
+		if (sockfd == -1) {
+			perror("socket: ");
+			continue;
+		}
+
+		int numbytes= 0;
+		struct request_login *request= (struct request_login*) malloc(sizeof(struct request_login));
+		request->req_type= REQ_LOGIN;
+		strcpy(request->req_username, "kgarsjo\0");
+		if ((numbytes= sendto(sockfd, request, sizeof(struct request_login), 0, p->ai_addr, p->ai_addrlen)) == -1) {
+			perror("couldn't write: ");
+		}
 	}
 
 	return true;
