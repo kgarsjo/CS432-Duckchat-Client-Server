@@ -15,6 +15,8 @@
 #define true 1
 #define false 0
 #define BUFSIZE 1024
+#define ANSI_COLOR_RED "\x1b[31m"
+#define ANSI_COLOR_RESET "\x1b[0m" 
 
 // :: Global Variables :: //
 int sockfd= 0;
@@ -80,6 +82,11 @@ int handleSwitch(const char *channel) {
 		return true;
 	}
 	return false;
+}
+
+int logError(const char *msg) {
+	fprintf(stderr, "%s[ ERR] :: %s%s\n", ANSI_COLOR_RED, msg, ANSI_COLOR_RESET);
+	return true;
 }
 
 int msg_exit() {
@@ -220,6 +227,22 @@ int parseInput(char *input) {
 	return result;
 }
 
+int recv_error(struct text_error *err) {
+	return logError(err->txt_error);	
+}
+
+int recv_list(struct text_list *list) {
+
+}
+
+int recv_say(struct text_say *say) {
+
+}
+
+int recv_who(struct text_who *who) {
+
+}
+
 int sendMessage(struct request *req, int len) {
 	int result= sendto(sockfd, req, len, 0, servinfo->ai_addr, servinfo->ai_addrlen);
 	if (result == -1) {
@@ -255,4 +278,19 @@ int setupSocket(char *addr, char *port) {
 	}
 
 	return (p != NULL);
+}
+
+int switchResponse(struct text *text) {
+	switch (text->txt_type) {
+	case TXT_ERROR:
+		return recv_error((struct text_error*) text);
+	case TXT_LIST:
+		return recv_list((struct text_list*) text);
+	case TXT_SAY:
+		return recv_say((struct text_say*) text);
+	case TXT_WHO:
+		return recv_who((struct text_who*) text);
+	default:
+		return false;
+	}
 }
