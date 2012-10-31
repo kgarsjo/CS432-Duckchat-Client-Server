@@ -29,6 +29,7 @@ char *bufPosition= inBuffer;
 std::set<std::string> channelSet;
 
 // :: Function Prototypes :: //
+void deprompt();
 int msg_exit();
 int msg_join(const char*);
 int msg_leave(const char*);
@@ -66,6 +67,7 @@ int main(int argc, char** argv) {
 	}
 
 	int parseStatus= true;
+	char *input;
 	fd_set readfds;
 	prompt();
 
@@ -76,7 +78,7 @@ int main(int argc, char** argv) {
 		select(sockfd+1, &readfds, NULL, NULL, NULL);
 		
 		if (FD_ISSET(0, &readfds)) {
-			char *input= new_inputString();
+			input= new_inputString();
 			if (input != NULL) {
 				parseStatus= parseInput(input);
 				if (parseStatus != -1) {prompt();}
@@ -85,8 +87,10 @@ int main(int argc, char** argv) {
 			struct text *txt= (struct text*) malloc(sizeof(struct text) + 1024);
 			int numbytes= 0;
 			if ((numbytes= recvfrom(sockfd, txt, 1024, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
+				deprompt();
 				switchResponse(txt);
 				free(txt);
+				prompt();
 			}
 		}
 	} while (parseStatus != -1);
@@ -95,6 +99,11 @@ int main(int argc, char** argv) {
 
 	cooked_mode();
 	return 0;
+}
+
+void deprompt() {
+	printf("\b\b");
+	fflush(stdout);
 }
 
 int handleSwitch(const char *channel) {
