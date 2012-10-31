@@ -246,13 +246,20 @@ int setupSocket(char *addr, char *port) {
 
 	// Create UDP socket
 	for (p= servinfo; p != NULL; p= p->ai_next) {
-		sockfd= socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+		sockfd= socket(servinfo->ai_family, servinfo->ai_socktype, servinfo->ai_protocol);
 		if (sockfd == -1) {
 			perror("socket: ");
 			continue;
 		}
-		break;
+
+		int numbytes= 0;
+		struct request_login *request= (struct request_login*) malloc(sizeof(struct request_login));
+		request->req_type= REQ_LOGIN;
+		strcpy(request->req_username, "kgarsjo\0");
+		if ((numbytes= sendto(sockfd, request, sizeof(struct request_login), 0, p->ai_addr, p->ai_addrlen)) == -1) {
+			perror("couldn't write: ");
+		}
 	}
 
-	return (p != NULL);
+	return true;
 }
