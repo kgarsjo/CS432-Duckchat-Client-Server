@@ -67,13 +67,14 @@ int main(int argc, char** argv) {
 
 	int parseStatus= true;
 	fd_set readfds;
-	FD_ZERO(&readfds);
-	FD_SET(0, &readfds);
-	FD_SET(sockfd, &readfds);
 	prompt();
 
 	do {
+		FD_ZERO(&readfds);
+		FD_SET(0, &readfds);
+		FD_SET(sockfd, &readfds);
 		select(sockfd+1, &readfds, NULL, NULL, NULL);
+		
 		if (FD_ISSET(0, &readfds)) {
 			char *input= new_inputString();
 			if (input != NULL) {
