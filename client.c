@@ -24,6 +24,8 @@ struct addrinfo *servinfo= NULL;
 struct sockaddr_in *servaddr= NULL;
 char activeChannel[CHANNEL_MAX];
 const char basicChannel[CHANNEL_MAX]= "Common";
+char inBuffer[SAY_MAX + 1];
+char *bufPosition= inBuffer;
 std::set<std::string> channelSet;
 
 // :: Function Prototypes :: //
@@ -36,9 +38,10 @@ int msg_switch(const char*);
 int msg_who(const char*);
 char *new_inputString();
 int parseInput(char*);
+void prompt();
 int sendMessage(struct request*, int);
 int setupSocket(char*, char*);
-
+int switchResponse(struct text*);
 
 int main(int argc, char** argv) {
 	// Basic Argument Check
@@ -48,30 +51,45 @@ int main(int argc, char** argv) {
 	}
 
 	// Set the terminal to raw mode
-	//raw_mode();
+	raw_mode();
 
 	memset(activeChannel, '\0', CHANNEL_MAX);
 
 	if (setupSocket(argv[1], argv[2]) != true) {
-		//cooked_mode();
+		cooked_mode();
 		return 1;
 	}
 
 	if (msg_login(argv[3]) != true) {
-		//cooked_mode();
+		cooked_mode();
 		return 1;
 	}
 
 	int parseStatus= true;
+	fd_set readfds;
+	FD_ZERO(&readfds);
+	FD_SET(STDIN_FILENO, &readfds);
+	FD_SET(sockfd, &readfds);
+	prompt();
+
 	do {
-		char *input= new_inputString();
-		parseStatus= parseInput(input);
-		free(input);
+		select(sockfd+1, &readfds, NULL, NULL, NULL);
+		if (FD_ISSET(STDIN_FILENO, &readfds)) {
+			char *input= new_inputString();
+			if (input != NULL) {
+				parseStatus= parseInput(input);
+				if (parseStatus != -1) {prompt();}
+			}
+		} else if (FD_ISSET(sockfd, &readfds)) {
+			struct text *txt= (struct text*) malloc(sizeof(struct text) + 1024);
+			switchResponse(txt);
+			free(txt);
+		}
 	} while (parseStatus != -1);
 
 	freeaddrinfo(servinfo);
 
-	//cooked_mode();
+	cooked_mode();
 	return 0;
 }
 
@@ -86,6 +104,7 @@ int handleSwitch(const char *channel) {
 
 int logError(const char *msg) {
 	fprintf(stderr, "%s[ ERR] :: %s%s\n", ANSI_COLOR_RED, msg, ANSI_COLOR_RESET);
+	fflush(stderr);
 	return true;
 }
 
@@ -100,6 +119,7 @@ int msg_exit() {
 
 int msg_join(const char *channel) {
 	if (channel == NULL) {
+		logError("usage: /join <channel>");
 		return false;
 	}
 	struct request_join *req= (struct request_join*) malloc(sizeof(struct request_join));
@@ -118,6 +138,7 @@ int msg_join(const char *channel) {
 
 int msg_leave(const char *channel) {
 	if (channel == NULL) {
+		logError("usage: /leave <channel>");
 		return false;
 	}
 	struct request_leave *req = (struct request_leave*) malloc(sizeof(struct request_leave));
@@ -168,6 +189,7 @@ int msg_say(const char *msg) {
 
 int msg_who(const char *channel) {
 	if (channel == NULL) {
+		logError("usage: /who <channel>");
 		return false;
 	}
 	struct request_who *req= (struct request_who*) malloc(sizeof(struct request_who));
@@ -180,16 +202,24 @@ int msg_who(const char *channel) {
 }
 
 char *new_inputString() {
-	char *line= (char*) malloc(BUFSIZE*sizeof(char));
-	int i= 0;
 	char c= getchar();
-	for (i=0; c != '\n' && i < BUFSIZE; i++, c= getchar()) {
-		line[i]= c;
+	if (c == '\n') {
+		*bufPosition++= '\0';
+		bufPosition= inBuffer;
+		printf("\n");
+		fflush(stdout);
+		return inBuffer;
+	} else if (((int)c) == 127 && bufPosition > inBuffer) { // Check for backspace
+		--bufPosition;
+		printf("\b");
+		fflush(stdout);
+	} else if (bufPosition != inBuffer + SAY_MAX) {
+		*bufPosition++ = c;
+		printf("%c", c);
+		fflush(stdout);
+		return NULL;
 	}
-
-	line[i]= '\0';
-
-	return line;
+	return NULL;
 }
 
 int parseInput(char *input) {
@@ -227,16 +257,23 @@ int parseInput(char *input) {
 	return result;
 }
 
+void prompt() {
+	printf("> ");
+	fflush(stdout);
+}
+
 int recv_error(struct text_error *err) {
 	return logError(err->txt_error);	
 }
 
 int recv_list(struct text_list *list) {
-
+	
 }
 
 int recv_say(struct text_say *say) {
-
+	printf("[%s] [%s] %s\n", say->txt_channel, say->txt_username, say->txt_text);
+	fflush(stdout);
+	return true;
 }
 
 int recv_who(struct text_who *who) {
@@ -291,6 +328,7 @@ int switchResponse(struct text *text) {
 	case TXT_WHO:
 		return recv_who((struct text_who*) text);
 	default:
+		logError("Unknown response type received");
 		return false;
 	}
 }
