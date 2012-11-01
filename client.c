@@ -171,7 +171,7 @@ int msg_list() {
 	struct request_list *req= (struct request_list*) malloc(sizeof(struct request_list));
 	req->req_type= htonl(REQ_LIST);
 
-	int result= sendMessage( (struct request*) req, sizeof(struct request_leave));
+	int result= sendMessage( (struct request*) req, sizeof(struct request_list));
 	free(req);
 	return result;
 }
