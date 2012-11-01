@@ -30,6 +30,7 @@ std::set<std::string> channelSet;
 
 // :: Function Prototypes :: //
 void deprompt();
+int logError(const char*);
 int msg_exit();
 int msg_join(const char*);
 int msg_leave(const char*);
@@ -112,6 +113,7 @@ int handleSwitch(const char *channel) {
 		strncpy(activeChannel, it->c_str(), CHANNEL_MAX);
 		return true;
 	}
+	logError("Haven't joined that channel");
 	return false;
 }
 
@@ -285,7 +287,7 @@ int recv_error(struct text_error *err) {
 }
 
 int recv_list(struct text_list *list) {
-	int numChannels= list->txt_nchannels, i;
+	int numChannels= ntohl(list->txt_nchannels), i;
 	if ((bufPosition - inBuffer) > 0) {
 		printf("\n");
 	}

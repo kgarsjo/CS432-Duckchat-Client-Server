@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -277,14 +278,56 @@ int msg_error(const char*msg) {
 int msg_list() {
 	char *format= (char*) malloc(BUFSIZE * sizeof(char));
 
-	
+	std::set<std::string> channels;
+	std::multimap<std::string,std::string>::iterator it;
+	std::set<std::string,std::string>::iterator sit;
+	for (it= map_chanToUser.begin(); it != map_chanToUser.end(); it++) {
+		channels.insert(it->first);
+	}
+
+	if (channels.size() == 0) {	// Should be impossible to reach, really.
+		msg_error("No channels exist on this server");
+		return false;
+	}
+
+	struct text_list *txt= (struct text_list*) malloc(sizeof(struct text_list) + channels.size()*sizeof(struct channel_info));
+	txt->txt_type= htonl(TXT_LIST);
+	txt->txt_nchannels= htonl(channels.size());
+
+	int i= 0;
+	for (sit= channels.begin(); sit != channels.end(); sit++) {
+		strncpy(txt->txt_channels[i++].ch_channel, sit->c_str(), CHANNEL_MAX);
+	}
+
+	int result= sendToLast((struct text*)txt, sizeof(struct text_list) + channels.size()*sizeof(struct channel_info));
+	if (result == true) {
+		snprintf(format, BUFSIZE, "%d channels sent", channels.size());
+		logSent(TXT_LIST, format);
+	}
 
 	free(format);
+	free(txt);
 	return true;
 }
 
-int msg_say() {
+int msg_say(const char *channel, const char *fromUser, const char *msg, const struct sockaddr *addr) {
+	struct text_say *txt= (struct text_say*) malloc(sizeof(struct text_say*));
+	char *format= (char*) malloc(sizeof(char)*BUFSIZE);
 
+	txt->txt_type= htonl(TXT_SAY);
+	strncpy(txt->txt_channel, channel, CHANNEL_MAX);
+	strncpy(txt->txt_username, fromUser, USERNAME_MAX);
+	strncpy(txt->txt_text, msg, SAY_MAX);
+
+	int result= sendMessage(addr, sizeof(addr), (struct text*)msg, sizeof(msg));
+	if (result == true) {
+		snprintf(format, BUFSIZE, "[%s][%s] %s", channel, fromUser, msg);
+		logSent(TXT_SAY, format);
+	}
+
+	free(txt);
+	free(format);
+	return result;
 }
 
 int msg_who(const char *channel) {
@@ -318,7 +361,7 @@ int msg_who(const char *channel) {
 	ii= map_chanToUser.equal_range(chanStr);
 	
 	for (it=ii.first; it != ii.second; it++) {
-		strncpy(txt->txt_users[i++].us_username, it->second.c_str(), CHANNEL_MAX);
+		strncpy(txt->txt_users[i++].us_username, it->second.c_str(), USERNAME_MAX);
 	}
 
 	int result= sendToLast((struct text*)txt, sizeof(struct text_who) + numUsers*sizeof(struct user_info));
@@ -402,7 +445,7 @@ int recv_say(struct request_say *req) {
 	snprintf(msg, size, "<%s> %s", req->req_channel, req->req_text);
 	logReceived(REQ_SAY, msg);
 	free(msg);
-	return true;
+	return false; //msg_say(req->;
 }
 
 int recv_who(struct request_who *req) {
