@@ -280,7 +280,24 @@ int recv_error(struct text_error *err) {
 }
 
 int recv_list(struct text_list *list) {
-	
+	int numChannels= list->txt_nchannels, i;
+	if ((bufPosition - inBuffer) > 0) {
+		printf("\n");
+	}
+	printf("Existing channels:\n");
+
+	for(i=0; i < numChannels; i++) {
+		printf(" %s\n", list->txt_channels[i].ch_channel);
+	}
+	prompt();
+	if ((bufPosition - inBuffer) > 0) {
+		char *cPtr;
+		for (cPtr= inBuffer; cPtr < bufPosition; ++cPtr) {
+			printf("%c", *cPtr);
+		}
+	}
+	fflush(stdout);
+	return true;
 }
 
 int recv_say(struct text_say *say) {
@@ -300,7 +317,23 @@ int recv_say(struct text_say *say) {
 }
 
 int recv_who(struct text_who *who) {
-
+	int numUsers= who->txt_nusernames, i;
+	if ((bufPosition - inBuffer) > 0) {
+		printf("\n");
+	}
+	printf("Users on channel %s:\n", who->txt_channel);
+	for (i=0; i < numUsers; ++i) {
+		printf("%s\n", who->txt_users[i].us_username);
+	}
+	prompt();
+	if ((bufPosition - inBuffer) > 0) {
+		char *cPtr;
+		for (cPtr= inBuffer; cPtr < bufPosition; ++cPtr) {
+			printf("%c", *cPtr);
+		}
+	}
+	fflush(stdout);
+	return true;
 }
 
 int sendMessage(struct request *req, int len) {
