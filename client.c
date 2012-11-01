@@ -284,7 +284,17 @@ int recv_list(struct text_list *list) {
 }
 
 int recv_say(struct text_say *say) {
+	if ((bufPosition - inBuffer) > 0) {
+		printf("\n");
+	}
 	printf("[%s] [%s] %s\n", say->txt_channel, say->txt_username, say->txt_text);
+	if ((bufPosition - inBuffer) > 0) {
+		char *cPtr;
+		prompt();
+		for (cPtr= inBuffer; cPtr < bufPosition; ++cPtr) {
+			printf("%c", *cPtr);
+		}
+	}
 	fflush(stdout);
 	return true;
 }
