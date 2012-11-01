@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
 	// program logic goes here
 		struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
 		if ((numbytes= recvfrom(sockfd, req, 1024, 0, servinfo->ai_addr, &servinfo->ai_addrlen)) > 0) {
-			switchRequest(req);
+			switchRequest(req, numbytes);
 		}
 		free(req);
 	}

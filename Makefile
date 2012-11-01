@@ -8,7 +8,8 @@ SOLARISLIBS=-lsocket $(LINUXLIBS)
 all: client server test
 
 client: client.c raw.c
-	$(CC) client.c raw.c $(SOLARISLIBS) $(CFLAGS) -o client
+	$(CC) client.c raw.c $(SOLARISLIBS) $(CFLAGS) -c
+	$(CC) client.o raw.o $(SOLARISLIBS) $(CFLAGS) -o client
 
 server: server.c 
 	$(CC) server.c $(SOLARISLIBS) $(CFLAGS) -o server

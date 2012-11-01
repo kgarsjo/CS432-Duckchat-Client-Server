@@ -241,8 +241,7 @@ int parseInput(char *input) {
 	strcpy(tok, input);
 	char *command= strtok(tok, DELIM);
 	if (command == NULL) {
-		printf("You shouldn't see this shit");
-		return -1;
+		return false;
 	}
 
 	int result= false;
@@ -276,7 +275,9 @@ void prompt() {
 }
 
 int recv_error(struct text_error *err) {
-	return logError(err->txt_error);	
+	logError(err->txt_error);	
+	prompt();
+	return true;
 }
 
 int recv_list(struct text_list *list) {
@@ -323,7 +324,7 @@ int recv_who(struct text_who *who) {
 	}
 	printf("Users on channel %s:\n", who->txt_channel);
 	for (i=0; i < numUsers; ++i) {
-		printf("%s\n", who->txt_users[i].us_username);
+		printf(" %s\n", who->txt_users[i].us_username);
 	}
 	prompt();
 	if ((bufPosition - inBuffer) > 0) {
