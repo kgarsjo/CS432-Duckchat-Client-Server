@@ -275,7 +275,7 @@ int msg_error(const char*msg) {
 }
 
 int msg_list() {
-	char *format (char*) malloc(BUFSIZE * sizeof(char));
+	char *format= (char*) malloc(BUFSIZE * sizeof(char));
 
 	
 
