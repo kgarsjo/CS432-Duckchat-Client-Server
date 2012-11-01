@@ -322,7 +322,7 @@ int recv_say(struct text_say *say) {
 }
 
 int recv_who(struct text_who *who) {
-	int numUsers= who->txt_nusernames, i;
+	int numUsers= ntohl(who->txt_nusernames), i;
 	if ((bufPosition - inBuffer) > 0) {
 		printf("\n");
 	}
@@ -380,7 +380,7 @@ int setupSocket(char *addr, char *port) {
 }
 
 int switchResponse(struct text *text) {
-	switch (text->txt_type) {
+	switch (ntohl(text->txt_type)) {
 	case TXT_ERROR:
 		return recv_error((struct text_error*) text);
 	case TXT_LIST:

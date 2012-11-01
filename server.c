@@ -74,6 +74,7 @@ void logInfo(const char*);
 void logReceived(int, const char*);
 void logSent(const char*);
 void logWarning(const char*);
+// TODO add msg_* functs here
 char *new_timeStr();
 int removeLastUser();
 int removeUserFromChannel(const char*, const char*);
@@ -264,7 +265,7 @@ int msg_error(const char*msg) {
 		return false;
 	}
 	struct text_error *txt= (struct text_error*) malloc(sizeof(struct text_error));
-	txt->txt_type= TXT_ERROR;
+	txt->txt_type= htonl(TXT_ERROR);
 	strncpy(txt->txt_error, msg, SAY_MAX);
 
 	int result= sendToLast((struct text*) txt, sizeof(struct text_error));
@@ -274,15 +275,61 @@ int msg_error(const char*msg) {
 }
 
 int msg_list() {
+	char *format (char*) malloc(BUFSIZE * sizeof(char));
 
+	
+
+	free(format);
+	return true;
 }
 
 int msg_say() {
 
 }
 
-int msg_who() {
+int msg_who(const char *channel) {
+	if (channel == NULL) {
+		logError("msg_who: channel was NULL");
+		return false;
+	}
 
+	char *format= (char*) malloc(BUFSIZE * sizeof(char));
+	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> ii;
+	std::multimap<std::string,std::string>::iterator it;
+	std::string chanStr= channel;
+
+	int numUsers= 0;
+	ii= map_chanToUser.equal_range(chanStr);
+	for (it= ii.first; it != ii.second; it++) {
+		++numUsers;
+	}
+
+	if (numUsers == 0) {
+		snprintf(format, BUFSIZE, "Channel %s does not exist", channel);
+		msg_error(format);
+		return false;
+	}
+
+	struct text_who *txt= (struct text_who*) malloc(sizeof(struct text_who) + numUsers*sizeof(struct user_info));
+	txt->txt_type= htonl(TXT_WHO);
+	txt->txt_nusernames= htonl(numUsers);
+	strncpy(txt->txt_channel, channel, CHANNEL_MAX);
+	int i= 0;
+	ii= map_chanToUser.equal_range(chanStr);
+	
+	for (it=ii.first; it != ii.second; it++) {
+		strncpy(txt->txt_users[i++].us_username, it->second.c_str(), CHANNEL_MAX);
+	}
+
+	int result= sendToLast((struct text*)txt, sizeof(struct text_who) + numUsers*sizeof(struct user_info));
+	if (result == true) {
+		snprintf(format, BUFSIZE, "<%s> %d users sent", channel, numUsers);
+		logSent(TXT_WHO, format);
+	}
+
+	free(txt);
+	free(format);
+	return result;
 }
 
 /*
@@ -321,12 +368,13 @@ int recv_leave(struct request_leave *req) {
 
 int recv_list(struct request_list *req) {
 	logReceived(REQ_LIST, "");
-	return true;
+	return msg_list();
 }
 
 int recv_login(struct request_login *req) {
 	logReceived(REQ_LOGIN, req->req_username);
 	addUser(req->req_username);
+	msg_error("not really an error :3");
 	return true;
 }
 
@@ -359,8 +407,8 @@ int recv_say(struct request_say *req) {
 
 int recv_who(struct request_who *req) {
 	logReceived(REQ_WHO, req->req_channel);
+	return msg_who(req->req_channel);
 }
-
 int removeLastUser() {
 	std::string addrStr= addrToString((struct sockaddr_in*)&lastUser);
 	std::string userStr= map_addrToUser[addrStr];
