@@ -75,7 +75,7 @@ void logReceived(int, const char*);
 void logSent(const char*);
 void logWarning(const char*);
 char *new_timeStr();
-int removeUser(const char*);
+int removeLastUser();
 int removeUserFromChannel(const char*, const char*);
 int sendMessage(const struct sockaddr*, size_t, struct text*, int);
 int sendToLast(struct text*, int);
@@ -168,10 +168,45 @@ int addUserToChannel(const char *username, const char *channel) {
 		return false;
 	}
 
+	char *format= (char*) malloc(sizeof(char) * BUFSIZE);
+
 	std::string userStr= username;
 	std::string chanStr= channel;
-	map_userToChan.insert( std::pair<std::string,std::string>(userStr, chanStr) );
-	map_chanToUser.insert( std::pair<std::string,std::string>(chanStr, userStr) );
+	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> ii;
+	std::multimap<std::string,std::string>::iterator it;
+	bool seen= false;
+	
+	// Check for channel dups in userToChan; add if none
+	ii= map_userToChan.equal_range(userStr);
+	for (it= ii.first; it != ii.second; it++) {
+		if (it->second == chanStr) { 
+			seen= true;
+			snprintf(format, BUFSIZE, "User %s already belongs to channel %s; ignoring join request", username, channel);
+			logWarning(format);
+			break; 
+		}
+	}
+	if (!seen) { 
+		map_userToChan.insert( std::pair<std::string,std::string>(userStr, chanStr) ); 
+		snprintf(format, BUFSIZE, "Adding user %s to channel %s", username, channel);
+		logInfo(format);
+	}
+
+	// Check for username dups in chanToUser; add if none
+	seen= false;
+	ii= map_chanToUser.equal_range(chanStr);
+	for (it= ii.first; it != ii.second; it++) {
+		if (it->second == userStr) {
+			seen= true;
+			break;
+		}
+	}
+	if (!seen) { 
+		map_chanToUser.insert( std::pair<std::string,std::string>(chanStr, userStr) ); 
+	}
+
+	free(format);
+	return true;
 }
 
 /*
@@ -269,7 +304,8 @@ char *new_timeStr() {
 
 int recv_join(struct request_join *req) {
 	logReceived(REQ_JOIN, req->req_channel);
-	return true;
+	std::string userStr= addrToUser((struct sockaddr_in*)&lastUser);
+	return addUserToChannel(userStr.c_str(), req->req_channel);
 }
 
 int recv_keepAlive(struct request_keep_alive *req) {
@@ -279,7 +315,8 @@ int recv_keepAlive(struct request_keep_alive *req) {
 
 int recv_leave(struct request_leave *req) {
 	logReceived(REQ_LEAVE, req->req_channel);
-	return true;
+	std::string userStr= addrToUser((struct sockaddr_in*)&lastUser);
+	return removeUserFromChannel(userStr.c_str(), req->req_channel);
 }
 
 int recv_list(struct request_list *req) {
@@ -295,6 +332,20 @@ int recv_login(struct request_login *req) {
 
 int recv_logout(struct request_logout *req) {
 	logReceived(REQ_LOGOUT, "");
+
+	int result= false;
+	std::string userStr= addrToUser((struct sockaddr_in*)&lastUser);
+	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> ii;
+	std::multimap<std::string,std::string>::iterator it;
+	ii= map_userToChan.equal_range(userStr);
+
+	for (it= ii.first; it != ii.second; it++) {
+		result= removeUserFromChannel(userStr.c_str(), it->second.c_str()) 
+				&& result;
+	}
+
+	result= removeLastUser() && result;
+	return result;
 }
 
 int recv_say(struct request_say *req) {
@@ -308,6 +359,78 @@ int recv_say(struct request_say *req) {
 
 int recv_who(struct request_who *req) {
 	logReceived(REQ_WHO, req->req_channel);
+}
+
+int removeLastUser() {
+	std::string addrStr= addrToString((struct sockaddr_in*)&lastUser);
+	std::string userStr= map_addrToUser[addrStr];
+	if (userStr == "") { // Unusual state; no user to remove
+		logError("removeLastUser: Unknown source record to remove");
+		return false;
+	}
+
+	map_addrToUser.erase(addrStr);
+	map_userToAddr.erase(userStr);
+	char *format= (char*) malloc(BUFSIZE * sizeof(char));
+	snprintf(format, BUFSIZE, "Logging out user %s", userStr.c_str());
+	logInfo(format);
+	free(format);
+
+	return true;	
+}
+
+int removeUserFromChannel(const char *username, const char *channel) {
+	if (username == NULL) {
+		logError("removeUserFromChannel: username was NULL");
+		return false;
+	} else if (channel == NULL) {
+		logError("removeUserFromChannel: channel was NULL");
+		return false;
+	}
+
+	std::string userStr= username;
+	std::string chanStr= channel;
+	char *format= (char*) malloc(sizeof(char) * BUFSIZE);
+
+	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> ii;
+	std::multimap<std::string,std::string>::iterator it;
+	bool seen= false;	
+
+	// Remove first matching chanel from userToChan
+	ii= map_userToChan.equal_range(userStr);
+	for (it= ii.first; it != ii.second; it++) {
+		if (it->second == chanStr) {
+			seen= true;
+			map_userToChan.erase(it);
+			snprintf(format, BUFSIZE, "Removed channel %s from user %s", it->second.c_str(), it->first.c_str());
+			logInfo(format);
+			break;
+		}
+	}
+	if (!seen) {
+		snprintf(format, BUFSIZE, "While removing, did not find channel %s recorded for user %s", channel, username);
+		logWarning(format);
+	}
+
+	// Remove first matching user from chanToUser
+	ii= map_chanToUser.equal_range(chanStr);
+	seen= false;
+	for (it= ii.first; it != ii.second; it++) {
+		if (it->second == userStr) {
+			seen= true;
+			map_chanToUser.erase(it);
+			snprintf(format, BUFSIZE, "Removed user %s from channel %s", it->first.c_str(), it->second.c_str());
+			logInfo(format);
+			break;
+		}
+	}
+	if (!seen) {
+		snprintf(format, BUFSIZE, "While removing, did not find user %s recorded for channel %s", username, channel);
+		logWarning(format);
+	}
+
+	free(format);
+	return true;
 }
 
 int sendMessage(const struct sockaddr *addr, size_t addrlen, struct text *msg, int msglen) {

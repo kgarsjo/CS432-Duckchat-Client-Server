@@ -222,10 +222,14 @@ char *new_inputString() {
 		printf("\n");
 		fflush(stdout);
 		return inBuffer;
-	} else if (((int)c) == 127 && bufPosition > inBuffer) { // Check for backspace
-		--bufPosition;
-		printf("\b");
-		fflush(stdout);
+	} else if (((int)c) == 127) { // Check for backspace
+		if (bufPosition > inBuffer) {
+			--bufPosition;
+			printf("\b");
+			fflush(stdout);
+		}
+		// Trap case where no more to delete
+
 	} else if (bufPosition != inBuffer + SAY_MAX) {
 		*bufPosition++ = c;
 		printf("%c", c);
