@@ -509,7 +509,7 @@ int removeUserFromChannel(const char *username, const char *channel) {
 	if (username == NULL) {
 		logError("removeUserFromChannel: username was NULL");
 		return false;
-	} else if (channel == NULL) {
+	} else if (channel == NULL || strlen(channel) > CHANNEL_MAX) {
 		logError("removeUserFromChannel: channel was NULL");
 		return false;
 	}
@@ -545,7 +545,7 @@ int removeUserFromChannel(const char *username, const char *channel) {
 		if (it->second == userStr) {
 			seen= true;
 			map_chanToUser.erase(it);
-			snprintf(format, BUFSIZE, "Removed user %s from channel %s", it->first.c_str(), it->second.c_str());
+			snprintf(format, BUFSIZE, "Removed user %s from channel %s", it->second.c_str(), it->first.c_str());
 			logInfo(format);
 			break;
 		}
