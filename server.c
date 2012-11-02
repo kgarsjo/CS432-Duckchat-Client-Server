@@ -419,7 +419,6 @@ int recv_list(struct request_list *req) {
 int recv_login(struct request_login *req) {
 	logReceived(REQ_LOGIN, req->req_username);
 	addUser(req->req_username);
-	msg_error("not really an error :3");
 	return true;
 }
 
