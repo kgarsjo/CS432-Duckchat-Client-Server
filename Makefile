@@ -1,6 +1,6 @@
 CC=g++
 
-CFLAGS=-Wall -W -g 
+CFLAGS=-Wall -W -g
 
 LINUXLIBS=-lnsl
 SOLARISLIBS=-lsocket $(LINUXLIBS)

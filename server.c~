@@ -141,7 +141,9 @@ int addUser(const char* username) {
 	char *format= (char*) malloc(BUFSIZE);
 	std::string userStr= username;
 	
-	std::string lastAddr=addrToString((struct sockaddr_in*)&lastUser);
+	char *lastAddrCstr= (char*) malloc(sizeof(char)*BUFSIZE);
+	inet_ntop(AF_INET, &(sa->sin_addr), lastAddrCstr, BUFSIZE);
+	std::string lastAddr= lastAddrCstr;
 	
 	std::string storedAddr= map_userToAddr[userStr];
 	
@@ -321,7 +323,7 @@ int msg_say(const char *channel, const char *fromUser, const char *msg, const st
 	strncpy(txt->txt_username, fromUser, USERNAME_MAX);
 	strncpy(txt->txt_text, msg, SAY_MAX);
 
-	int result= sendMessage(addr, sizeof(struct sockaddr_in), (struct text*)txt, sizeof(struct text_say));
+	int result= sendMessage(addr, sizeof(struct sockaddr_in), (struct text*)msg, sizeof(msg));
 	if (result == true) {
 		snprintf(format, BUFSIZE, "[%s][%s] %s", channel, fromUser, msg);
 		logSent(TXT_SAY, format);
@@ -432,7 +434,6 @@ int recv_logout(struct request_logout *req) {
 	std::multimap<std::string,std::string>::iterator it;
 	ii= map_userToChan.equal_range(userStr);
 
-
 	for (it= ii.first; it != ii.second; it++) {
 		result= removeUserFromChannel(userStr.c_str(), it->second.c_str()) 
 				&& result;
@@ -443,36 +444,27 @@ int recv_logout(struct request_logout *req) {
 }
 
 int recv_say(struct request_say *req) {
-	char *msg= (char*) malloc(BUFSIZE * sizeof(char));
+	int size= strlen(req->req_channel) + strlen(req->req_text) + 4;
+	char *msg= (char*) malloc(size);
 	std::string fromUser= addrToUser((struct sockaddr_in*)&lastUser);
-	
-	sprintf(msg, "<%s> %s", req->req_channel, req->req_text);
+
+	snprintf(msg, size, "<%s> %s", req->req_channel, req->req_text);
 	logReceived(REQ_SAY, msg);
 	free(msg);
-	
+
 	// for every channel the user is a member of...
 	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> cii;
+	std::pair<std::multimap<std::string,struct sockaddr_storage>::iterator,std::multimap<std::string,struct sockaddr_storage>::iterator> uii;
 	std::multimap<std::string,std::string>::iterator cit;
+	std::map<std::string,struct sockaddr_storage>::iterator uit;	
 
-	std::string req_channel= req->req_channel;
-	cii= map_chanToUser.equal_range(req_channel);
-	
+	cii= map_chanToUser.equal_range(req->req_channel);
 	for (cit= cii.first; cit != cii.second; cit++) {
 		std::string userStr= cit->second;
 
 		std::string userAddr= map_userToAddr[userStr];
-		char *tok= (char*) malloc(sizeof(char)*BUFSIZE);
-		strncpy(tok, userAddr.c_str(), strlen(userAddr.c_str()));
-		
-		char *ip= strtok(tok, ":");
-		char *port= strtok(NULL, ":");
-		u_short p= (u_short) atoi(port);
-
 		struct sockaddr_in sa;
-		inet_pton(AF_INET, ip, &(sa.sin_addr));
-		sa.sin_port= p;
-		sa.sin_family= AF_INET;
-
+		inet_pton(AF_INET, userAddr.c_str(), &(sa.sin_addr));
 		msg_say(req->req_channel, fromUser.c_str(), req->req_text, (struct sockaddr*)&sa);
 	}
 	
