@@ -408,7 +408,12 @@ int recv_keepAlive(struct request_keep_alive *req) {
 int recv_leave(struct request_leave *req) {
 	logReceived(REQ_LEAVE, req->req_channel);
 	std::string userStr= addrToUser((struct sockaddr_in*)&lastUser);
-	return removeUserFromChannel(userStr.c_str(), req->req_channel);
+	char *userCstr= (char*) malloc(sizeof(char) * BUFSIZE);
+	strcpy(userCstr, userStr.c_str());
+
+	int result= removeUserFromChannel(userCstr, req->req_channel);
+	free(userCstr);
+	return true;
 }
 
 int recv_list(struct request_list *req) {
@@ -431,13 +436,19 @@ int recv_logout(struct request_logout *req) {
 	std::multimap<std::string,std::string>::iterator it;
 	ii= map_userToChan.equal_range(userStr);
 
+	char *userCstr= (char*) malloc(sizeof(char) * BUFSIZE);
+	char *channel=  (char*) malloc(sizeof(char) * BUFSIZE);
+	strcpy(userCstr, userStr.c_str());
 
 	for (it= ii.first; it != ii.second; it++) {
-		result= removeUserFromChannel(userStr.c_str(), it->second.c_str()) 
+		strcpy(channel, it->second.c_str());
+		result= removeUserFromChannel(userCstr, channel) 
 				&& result;
 	}
 
 	result= removeLastUser() && result;
+	free(userCstr);
+	free(channel);
 	return result;
 }
 
@@ -461,7 +472,7 @@ int recv_say(struct request_say *req) {
 
 		std::string userAddr= map_userToAddr[userStr];
 		char *tok= (char*) malloc(sizeof(char)*BUFSIZE);
-		strncpy(tok, userAddr.c_str(), strlen(userAddr.c_str()));
+		strcpy(tok, userAddr.c_str());
 		
 		char *ip= strtok(tok, ":");
 		char *port= strtok(NULL, ":");
@@ -526,8 +537,8 @@ int removeUserFromChannel(const char *username, const char *channel) {
 	for (it= ii.first; it != ii.second; it++) {
 		if (it->second == chanStr) {
 			seen= true;
-			map_userToChan.erase(it);
 			snprintf(format, BUFSIZE, "Removed channel %s from user %s", it->second.c_str(), it->first.c_str());
+			map_userToChan.erase(it);
 			logInfo(format);
 			break;
 		}
@@ -543,8 +554,8 @@ int removeUserFromChannel(const char *username, const char *channel) {
 	for (it= ii.first; it != ii.second; it++) {
 		if (it->second == userStr) {
 			seen= true;
-			map_chanToUser.erase(it);
 			snprintf(format, BUFSIZE, "Removed user %s from channel %s", it->second.c_str(), it->first.c_str());
+			map_chanToUser.erase(it);
 			logInfo(format);
 			break;
 		}
