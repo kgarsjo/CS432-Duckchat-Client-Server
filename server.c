@@ -75,8 +75,19 @@ void logInfo(const char*);
 void logReceived(int, const char*);
 void logSent(const char*);
 void logWarning(const char*);
-// TODO add msg_* functs here
+int msg_error(const char*);
+int msg_list();
+int msg_say(const char*, const char*, const char*, const struct sockaddr*);
+int msg_who(const char*);
 char *new_timeStr();
+int recv_join(struct req_join*);
+int recv_keepAlive(struct req_keep_alive*);
+int recv_leave(struct req_leave*);
+int recv_list(struct req_list*);
+int recv_login(struct req_login*);
+int recv_logout(struct req_logout*);
+int recv_say(struct req_say*);
+int recv_who(struct req_who*);
 int removeLastUser();
 int removeUserFromChannel(const char*, const char*);
 int sendMessage(const struct sockaddr*, size_t, struct text*, int);
@@ -88,8 +99,9 @@ int switchRequest(struct request*, int);
 // :: PROGRAM ENTRY :: //
 int main(int argc, char **argv) {
 
-	if (argc != 2+1){
-		printf("%s", "usage: hostname port\n");
+	// Argcheck, count must not be even, must be > 1
+	if (argc % 2 == 0 || argc <= 1){
+		printf("%s", "usage: hostname port <neighborhost neighborport>*\n");
 		return 1;
 	}
 
@@ -440,12 +452,14 @@ int recv_logout(struct request_logout *req) {
 	char *channel=  (char*) malloc(sizeof(char) * BUFSIZE);
 	strcpy(userCstr, userStr.c_str());
 
-	for (it= ii.first; it != ii.second; it++) {
+	for (it= ii.first; it != ii.second; ++it) {
 		strcpy(channel, it->second.c_str());
 		result= removeUserFromChannel(userCstr, channel) 
 				&& result;
+		getchar();
 	}
 
+	logInfo("Before last user...");
 	result= removeLastUser() && result;
 	free(userCstr);
 	free(channel);
@@ -551,7 +565,7 @@ int removeUserFromChannel(const char *username, const char *channel) {
 	// Remove first matching user from chanToUser
 	ii= map_chanToUser.equal_range(chanStr);
 	seen= false;
-	for (it= ii.first; it != ii.second; it++) {
+	for (it= ii.first; it != ii.second; ++it) {
 		if (it->second == userStr) {
 			seen= true;
 			snprintf(format, BUFSIZE, "Removed user %s from channel %s", it->second.c_str(), it->first.c_str());
