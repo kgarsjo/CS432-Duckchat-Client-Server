@@ -14,9 +14,9 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "duckchat.h"
-#include "server.h"
 
 #define true 1
 #define false 0
@@ -34,10 +34,12 @@
 
 // :: GLOBAL VALUES :: //
 int sockfd= 0;
+int maxfd= 0;
 struct addrinfo *servinfo= NULL;
 struct sockaddr_storage lastUser;
 size_t lastSize= sizeof(lastUser);
 
+std::vector<int>							vec_serverSocks;
 std::map<std::string, std::string> 			map_addrToUser;
 std::map<std::string, std::string>			map_userToAddr;
 std::multimap<std::string, std::string>		map_userToChan;
@@ -69,6 +71,7 @@ std::string addrToString(const struct sockaddr_in*);
 std::string addrToUser(const struct sockaddr_in*);
 int addUser(const char*);
 int addUserToChannel(const char*, const char*);
+long long getuid();
 void log(FILE*, const char*, const char*, const char*);
 void logError(const char*);
 void logInfo(const char*);
@@ -92,6 +95,7 @@ int removeLastUser();
 int removeUserFromChannel(const char*, const char*);
 int sendMessage(const struct sockaddr*, size_t, struct text*, int);
 int sendToLast(struct text*, int);
+int setupConnection(char*, char*);
 int setupSocket(char*, char*);
 int switchRequest(struct request*, int);
 
@@ -107,21 +111,49 @@ int main(int argc, char **argv) {
 
 	logInfo("Starting Duckchat Server");
 
+	int i;
+	char *format= (char*) malloc(sizeof(char) * BUFSIZE);
+	
 	setupSocket(argv[1], argv[2]);
-	logInfo("Sockets initialized");
+	maxfd= sockfd;
+	logInfo("Setup Listening Socket");
+
+	for (i= 3; i < argc; i+= 2) {
+		int result= setupConnection(argv[i], argv[i+1]);
+		if (result != -1) {
+			vec_serverSocks.push_back(result);
+			sprintf(format, "Init'd connection: %s %s", argv[i], argv[i+1]);
+			logInfo(format);
+		}
+		if (result > maxfd) {
+			maxfd= result;
+		}
+	}
+	free(format);
 	logInfo("Waiting for requests");	
 
 	int numbytes= 0;
+	unsigned int j= 0;
+	fd_set readfds;
 	while (true) {
-
-	// program logic goes here
-		struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
-		if ((numbytes= recvfrom(sockfd, req, 1024, 0, (struct sockaddr*)&lastUser, &lastSize)) > 0) {
-			switchRequest(req, numbytes);
+		// Prepare to select`
+		FD_ZERO(&readfds);
+		FD_SET(sockfd, &readfds);
+		for (j= 0; j < vec_serverSocks.size(); j++) {
+			FD_SET(vec_serverSocks[j], &readfds);
 		}
-		free(req);
-	}
+		select(maxfd+1, &readfds, NULL, NULL, NULL); 
 
+		if (FD_ISSET(sockfd, &readfds)) {
+			struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
+			if ((numbytes= recvfrom(sockfd, req, 1024, 0, (struct sockaddr*)&lastUser, &lastSize)) > 0) {
+				switchRequest(req, numbytes);
+			}
+			free(req);
+		} else {
+			// Do some shit
+		}
+	}
 	freeaddrinfo(servinfo);
 	return 0;
 }
@@ -149,7 +181,6 @@ int addUser(const char* username) {
 		return false;
 	}
 
-	struct sockaddr_in* sa= (struct sockaddr_in*)&lastUser;
 	char *format= (char*) malloc(BUFSIZE);
 	std::string userStr= username;
 	
@@ -223,6 +254,10 @@ int addUserToChannel(const char *username, const char *channel) {
 
 	free(format);
 	return true;
+}
+
+long long getuid() {
+	
 }
 
 /*
@@ -413,6 +448,7 @@ int recv_join(struct request_join *req) {
 }
 
 int recv_keepAlive(struct request_keep_alive *req) {
+	if (req == NULL) { return false; }
 	logReceived(REQ_KEEP_ALIVE, "");
 	return true;
 }
@@ -425,10 +461,11 @@ int recv_leave(struct request_leave *req) {
 
 	int result= removeUserFromChannel(userCstr, req->req_channel);
 	free(userCstr);
-	return true;
+	return result;
 }
 
 int recv_list(struct request_list *req) {
+	if (req == NULL) { return false; }
 	logReceived(REQ_LIST, "");
 	return msg_list();
 }
@@ -440,6 +477,7 @@ int recv_login(struct request_login *req) {
 }
 
 int recv_logout(struct request_logout *req) {
+	if (req == NULL) {return false;}
 	logReceived(REQ_LOGOUT, "");
 
 	int result= false;
@@ -452,14 +490,14 @@ int recv_logout(struct request_logout *req) {
 	char *channel=  (char*) malloc(sizeof(char) * BUFSIZE);
 	strcpy(userCstr, userStr.c_str());
 
+
 	for (it= ii.first; it != ii.second; ++it) {
 		strcpy(channel, it->second.c_str());
+		if (channel == NULL) return false;
 		result= removeUserFromChannel(userCstr, channel) 
 				&& result;
-		getchar();
 	}
 
-	logInfo("Before last user...");
 	result= removeLastUser() && result;
 	free(userCstr);
 	free(channel);
@@ -629,6 +667,39 @@ int setupSocket(char *addr, char *port) {
 	}
 
 	return true;
+}
+
+int setupConnection(char *addr, char *port) {
+	int result= 0;
+	
+	// Setup hints
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family= AF_INET;
+	hints.ai_socktype= SOCK_DGRAM;
+
+	struct addrinfo *sInfo;
+
+	// Fetch address info struct
+	if ((result= getaddrinfo(addr, port, &hints, &sInfo)) != 0) {
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
+		return -1;
+	}
+
+	// Create UDP Socket
+	sockfd= socket(sInfo->ai_family, sInfo->ai_socktype, sInfo->ai_protocol);
+	if (sockfd == -1) {
+		perror("socket: ");
+		return -1;
+	}
+
+	// Connect for simplicity
+	if ((result= connect(sockfd, sInfo->ai_addr, sInfo->ai_addrlen)) != 0) {
+		perror("connect: ");
+		return -1;
+	}
+
+	return sockfd;
 }
 
 int switchRequest(struct request* req, int len) {
