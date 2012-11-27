@@ -2,12 +2,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <iostream>
 #include <map>
@@ -22,7 +25,6 @@
 #define false 0
 #define BUFSIZE 1024
 #define TIMESIZE 100
-#define SRV_PORT "2222"
 
 #define ANSI_COLOR_RED 		"\x1b[31m"
 #define ANSI_COLOR_GREEN 	"\x1b[32m"
@@ -39,7 +41,9 @@ struct addrinfo *servinfo= NULL;
 struct sockaddr_storage lastUser;
 size_t lastSize= sizeof(lastUser);
 
-std::vector<int>							vec_serverSocks;
+std::set<std::string>						set_chanList;
+std::set<long long>							set_sayList;
+std::vector<std::string>					vec_serverAddrs;
 std::map<std::string, std::string> 			map_addrToUser;
 std::map<std::string, std::string>			map_userToAddr;
 std::multimap<std::string, std::string>		map_userToChan;
@@ -49,14 +53,17 @@ char buf[1024];
 
 
 // :: CONSTANT VALUES :: //
-const char* const REQ_STR[8] = {"REQ_LOGIN",
+const char* const REQ_STR[11] = {"REQ_LOGIN",
 								"REQ_LOGOUT",
 								"REQ_JOIN",
 								"REQ_LEAVE",
 								"REQ_SAY",
 								"REQ_LIST",
 								"REQ_WHO",
-								"REQ_KEEP_ALIVE"
+								"REQ_KEEP_ALIVE",
+								"S2S_JOIN",
+								"S2S_LEAVE",
+								"S2S_SAY"
 								};
 const char* const TXT_STR[4] = {"TXT_SAY",
 								"TXT_LIST",
@@ -71,7 +78,7 @@ std::string addrToString(const struct sockaddr_in*);
 std::string addrToUser(const struct sockaddr_in*);
 int addUser(const char*);
 int addUserToChannel(const char*, const char*);
-long long getuid();
+long long genuid();
 void log(FILE*, const char*, const char*, const char*);
 void logError(const char*);
 void logInfo(const char*);
@@ -80,19 +87,26 @@ void logSent(const char*);
 void logWarning(const char*);
 int msg_error(const char*);
 int msg_list();
+int msg_s2s_join(const char*);
+int msg_s2s_leave(char*);
+int msg_s2s_say(char*, char*, char*);
 int msg_say(const char*, const char*, const char*, const struct sockaddr*);
 int msg_who(const char*);
+struct sockaddr *new_stringToAddr(std::string);
 char *new_timeStr();
-int recv_join(struct req_join*);
-int recv_keepAlive(struct req_keep_alive*);
-int recv_leave(struct req_leave*);
-int recv_list(struct req_list*);
-int recv_login(struct req_login*);
-int recv_logout(struct req_logout*);
-int recv_say(struct req_say*);
-int recv_who(struct req_who*);
+int recv_join(struct request_join*);
+int recv_keepAlive(struct request_keep_alive*);
+int recv_leave(struct request_leave*);
+int recv_list(struct request_list*);
+int recv_login(struct request_login*);
+int recv_logout(struct request_logout*);
+int recv_say(struct request_say*i, long long, char*);
+int recv_who(struct request_who*);
 int removeLastUser();
 int removeUserFromChannel(const char*, const char*);
+int s2s_broadcast(struct request*, int);
+int s2s_send(const struct sockaddr*, size_t, struct request*, int);
+int s2s_sendToLast(struct request*, int);
 int sendMessage(const struct sockaddr*, size_t, struct text*, int);
 int sendToLast(struct text*, int);
 int setupConnection(char*, char*);
@@ -119,40 +133,24 @@ int main(int argc, char **argv) {
 	logInfo("Setup Listening Socket");
 
 	for (i= 3; i < argc; i+= 2) {
-		int result= setupConnection(argv[i], argv[i+1]);
-		if (result != -1) {
-			vec_serverSocks.push_back(result);
-			sprintf(format, "Init'd connection: %s %s", argv[i], argv[i+1]);
-			logInfo(format);
-		}
-		if (result > maxfd) {
-			maxfd= result;
-		}
+		sprintf(format, "%s:%s", argv[i], argv[i+1]);
+		std::string addr= format;
+		vec_serverAddrs.push_back(addr);
 	}
-	free(format);
+
 	logInfo("Waiting for requests");	
 
+	logInfo(format);
+	free(format);
+
 	int numbytes= 0;
-	unsigned int j= 0;
-	fd_set readfds;
 	while (true) {
 		// Prepare to select`
-		FD_ZERO(&readfds);
-		FD_SET(sockfd, &readfds);
-		for (j= 0; j < vec_serverSocks.size(); j++) {
-			FD_SET(vec_serverSocks[j], &readfds);
+		struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
+		if ((numbytes= recvfrom(sockfd, req, 1024, 0, (struct sockaddr*)&lastUser, &lastSize)) > 0) {
+			switchRequest(req, numbytes);
 		}
-		select(maxfd+1, &readfds, NULL, NULL, NULL); 
-
-		if (FD_ISSET(sockfd, &readfds)) {
-			struct request *req= (struct request*) malloc(sizeof (struct request) + BUFSIZE); 
-			if ((numbytes= recvfrom(sockfd, req, 1024, 0, (struct sockaddr*)&lastUser, &lastSize)) > 0) {
-				switchRequest(req, numbytes);
-			}
-			free(req);
-		} else {
-			// Do some shit
-		}
+		free(req);
 	}
 	freeaddrinfo(servinfo);
 	return 0;
@@ -230,13 +228,14 @@ int addUserToChannel(const char *username, const char *channel) {
 			seen= true;
 			snprintf(format, BUFSIZE, "User %s already belongs to channel %s; ignoring join request", username, channel);
 			logWarning(format);
-			break; 
+			return false; 
 		}
 	}
 	if (!seen) { 
 		map_userToChan.insert( std::pair<std::string,std::string>(userStr, chanStr) ); 
 		snprintf(format, BUFSIZE, "Adding user %s to channel %s", username, channel);
 		logInfo(format);
+		msg_s2s_join(channel);
 	}
 
 	// Check for username dups in chanToUser; add if none
@@ -256,8 +255,18 @@ int addUserToChannel(const char *username, const char *channel) {
 	return true;
 }
 
-long long getuid() {
+long long genuid() {
+	long long uid= 0LL;
+	int fd= open("/dev/urandom", O_RDONLY);
+	if (fd == -1) {
+		return 0;
+	}
 	
+	int numbytes= read(fd, &uid, 8);
+	if (numbytes == 0) {
+		return 0;
+	}
+	return uid;
 }
 
 /*
@@ -298,11 +307,25 @@ void logReceived(int type, const char *msg) {
 	free(format);
 }
 
+void logReceivedS2S(int type, const char *msg) {
+	char *format= (char*) malloc(BUFSIZE * sizeof(char));
+	snprintf(format, BUFSIZE, "[%s] \"%s\"", REQ_STR[type], msg);
+	log(stdout, "[RECV] ::", format, ANSI_COLOR_BLUE);
+	free(format);
+}
+
 void logSent(int type, const char *msg) {
 	char *format= (char*) malloc(BUFSIZE * sizeof(char));
 	snprintf(format, BUFSIZE, "[%s] \"%s\"", TXT_STR[type], msg);
 	log(stdout, "[SEND] ::", format, ANSI_COLOR_MAGENTA);
 	free(format);	
+}
+
+void logSentS2S(int type, const char *msg) {
+	char *format= (char*) malloc(BUFSIZE * sizeof(char));
+	snprintf(format, BUFSIZE, "[%s] \"%s\"", REQ_STR[type], msg);
+	log(stdout, "[SS2S] ::", format, ANSI_COLOR_BLUE);
+	free(format);
 }
 
 void logWarning(const char* msg) {
@@ -357,6 +380,62 @@ int msg_list() {
 	free(format);
 	free(txt);
 	return true;
+}
+
+int msg_s2s_join(const char *channel) {
+	struct request_s2s_join *req= (struct request_s2s_join*) malloc(sizeof(struct request_s2s_join));
+	req->req_type= htonl(REQ_S2S_JOIN);
+	strncpy(req->req_channel, channel, CHANNEL_MAX);
+
+	int result= s2s_broadcast((struct request*) req, sizeof(struct request_s2s_join));
+	if (result == true) {
+	logSentS2S(REQ_S2S_JOIN, channel);
+	}
+	free(req);
+	return result;
+}
+
+int msg_s2s_leave(char *channel) {
+	if (channel == NULL) {return false;}
+	
+	struct request_s2s_leave *req= (struct request_s2s_leave*) malloc(sizeof(struct request_s2s_leave));
+	req->req_type= htonl(REQ_S2S_LEAVE);
+	strncpy(req->req_channel, channel, CHANNEL_MAX);
+	
+	int result= s2s_sendToLast((struct request*) req, sizeof(struct request_s2s_join));
+	free(req);
+	return result;
+}
+
+int msg_s2s_say(struct request_s2s_say* req) {
+	if (req == NULL) {
+		return false;
+	}
+	// Register the uid before broadcasting
+	set_sayList.insert(req->uid);
+
+	int result= s2s_broadcast((struct request*) req, sizeof(struct request_s2s_say));
+	if (result == true) {
+		logSentS2S(REQ_S2S_SAY, req->req_text);
+	}
+	return result;
+}
+
+int msg_s2s_say(char *username, char *channel, char *msg) {
+	if (username == NULL || channel == NULL || msg == NULL) {
+		return false;
+	}
+
+	struct request_s2s_say *req= (struct request_s2s_say*) malloc(sizeof(struct request_s2s_say));
+	req->req_type= htonl(REQ_S2S_SAY);
+	strncpy(req->req_channel, channel, CHANNEL_MAX);
+	strncpy(req->req_username, username, USERNAME_MAX);
+	strncpy(req->req_text, msg, SAY_MAX);
+	req->uid= genuid();
+
+	int result= msg_s2s_say(req);
+	free(req);
+	return result;
 }
 
 int msg_say(const char *channel, const char *fromUser, const char *msg, const struct sockaddr *addr) {
@@ -424,6 +503,30 @@ int msg_who(const char *channel) {
 	return result;
 }
 
+
+struct sockaddr *new_stringToAddr(std::string straddr) {
+	struct sockaddr_in *sa= (struct sockaddr_in*) malloc(sizeof(struct sockaddr_in));
+	char *tok= (char*) malloc(sizeof(char)*BUFSIZE);
+	strcpy(tok, straddr.c_str());
+		
+	char *ip= strtok(tok, ":");
+	char *port= strtok(NULL, ":");
+	/*u_short p= (u_short) atoi(port);
+
+	inet_pton(AF_INET, ip, &(sa->sin_addr));
+	sa->sin_port= p;
+	sa->sin_family= AF_INET;
+
+	return sa;*/
+
+	struct addrinfo hints, *res;
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family= AF_INET;
+	hints.ai_socktype= SOCK_DGRAM;
+	int result= getaddrinfo(ip, port, &hints, &res);
+
+	return res->ai_addr;
+}
 /*
 	new_timeStr - Creates a new string giving the time of day.
 	Returns: A new heap-allocated char*.
@@ -444,6 +547,8 @@ char *new_timeStr() {
 int recv_join(struct request_join *req) {
 	logReceived(REQ_JOIN, req->req_channel);
 	std::string userStr= addrToUser((struct sockaddr_in*)&lastUser);
+	std::string chan= req->req_channel;
+	set_chanList.insert(chan);
 	return addUserToChannel(userStr.c_str(), req->req_channel);
 }
 
@@ -504,13 +609,42 @@ int recv_logout(struct request_logout *req) {
 	return result;
 }
 
-int recv_say(struct request_say *req) {
+int recv_s2s_join(struct request_s2s_join *req) {
+	logReceived(REQ_S2S_JOIN, req->req_channel);
+	std::string chan= req->req_channel;
+	if (set_chanList.find(chan) == set_chanList.end()) {
+		set_chanList.insert(chan);
+		return msg_s2s_join(req->req_channel);
+	}
+	return false;
+}
+
+int recv_s2s_say(struct request_s2s_say *req) {
+	struct request_say* sreq= (struct request_say*) malloc(sizeof(struct request_say));
+	strncpy(sreq->req_channel, req->req_channel, CHANNEL_MAX);
+	strncpy(sreq->req_text, req->req_text, SAY_MAX);
+
+	if (set_sayList.find(req->uid) == set_sayList.end()) {	
+		logReceived(REQ_S2S_SAY, req->req_text);
+		int result= recv_say(sreq, req->uid, req->req_username);
+		free(sreq);
+		return result;
+	}
+	msg_s2s_leave(req->req_channel);
+	return false;
+}
+
+int recv_say(struct request_say *req, long long uid, char *uname) {
 	char *msg= (char*) malloc(BUFSIZE * sizeof(char));
-	std::string fromUser= addrToUser((struct sockaddr_in*)&lastUser);
-	
-	sprintf(msg, "<%s> %s", req->req_channel, req->req_text);
-	logReceived(REQ_SAY, msg);
-	free(msg);
+	if (uname == NULL) {
+		std::string fromUser= addrToUser((struct sockaddr_in*)&lastUser);
+		uname= (char*) malloc(sizeof(char) * BUFSIZE);
+		strncpy(uname, fromUser.c_str(), USERNAME_MAX);
+
+		sprintf(msg, "<%s> %s", req->req_channel, req->req_text);
+		logReceived(REQ_SAY, msg);
+		free(msg);
+	}
 	
 	// for every channel the user is a member of...
 	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> cii;
@@ -535,8 +669,23 @@ int recv_say(struct request_say *req) {
 		sa.sin_port= p;
 		sa.sin_family= AF_INET;
 
-		msg_say(req->req_channel, fromUser.c_str(), req->req_text, (struct sockaddr*)&sa);
+		msg_say(req->req_channel, uname, req->req_text, (struct sockaddr*)&sa);
+		free(tok);
 	}
+
+	if (uid == 0) {
+		msg_s2s_say(uname, req->req_channel, req->req_text);
+	} else {
+		struct request_s2s_say* sreq= (struct request_s2s_say*) malloc(sizeof(struct request_s2s_say));
+		strncpy(sreq->req_username, uname, USERNAME_MAX);
+		strncpy(sreq->req_channel, req->req_channel, CHANNEL_MAX);
+		strncpy(sreq->req_text, req->req_text, SAY_MAX);
+		sreq->uid= uid;
+		sreq->req_type= htonl(REQ_S2S_SAY);
+		msg_s2s_say(sreq);
+		free(sreq);
+	}
+
 	
 	
 		// for every user in that channel...
@@ -619,6 +768,29 @@ int removeUserFromChannel(const char *username, const char *channel) {
 
 	free(format);
 	return true;
+}
+
+int s2s_broadcast(struct request *msg, int msglen) {
+	unsigned int i, result= true;
+	if (vec_serverAddrs.size() == 0) { return false; }
+	for (i= 0; i < vec_serverAddrs.size(); i++) {
+		const struct sockaddr *sa= new_stringToAddr(vec_serverAddrs[i]);
+		result= s2s_send(sa, sizeof(struct sockaddr_in), msg, msglen) && result;
+	}
+	return result;
+}
+
+int s2s_send(const struct sockaddr *addr, size_t addrlen, struct request *msg, int msglen) {
+	int result= sendto(sockfd, msg, msglen, 0, addr, addrlen);
+	if (result == -1) {
+		perror("send");
+		return false;
+	}
+	return true;
+}
+
+int s2s_sendToLast(struct request *msg, int msglen) {
+	return s2s_send((struct sockaddr*)&lastUser, lastSize, msg, msglen);
 }
 
 int sendMessage(const struct sockaddr *addr, size_t addrlen, struct text *msg, int msglen) {
@@ -705,15 +877,18 @@ int setupConnection(char *addr, char *port) {
 int switchRequest(struct request* req, int len) {
 	char *warning= (char*) malloc(sizeof(char)*BUFSIZE);
 	int result= false;
+	req->req_type= ntohl(req->req_type);
 
-	if (addrToUser((struct sockaddr_in*)&lastUser) == "" && req->req_type != REQ_LOGIN) {
-		snprintf(warning, BUFSIZE, "Received request type %d from unknown user; ignoring", ntohl(req->req_type));
-		logWarning(warning);
-		free(warning);
-		return result;
+	if (req->req_type != REQ_S2S_JOIN && req->req_type != REQ_S2S_LEAVE && req->req_type != REQ_S2S_SAY) {
+		if (addrToUser((struct sockaddr_in*)&lastUser) == "" && req->req_type != REQ_LOGIN) {
+			snprintf(warning, BUFSIZE, "Received request type %d from unknown user; ignoring", req->req_type);
+			logWarning(warning);
+			free(warning);
+			return result;
+		}
 	}
 
-	switch( ntohl(req->req_type) ) {
+	switch( req->req_type ) {
 	case REQ_LOGIN:
 		if (sizeof(struct request_login) != len) {
 			snprintf(warning, BUFSIZE, "Received login request; expected %d bytes but was %d bytes", sizeof(struct request_login), len);
@@ -757,7 +932,7 @@ int switchRequest(struct request* req, int len) {
 			result= false;
 			break;
 		}
-		result= recv_say( (struct request_say*) req );
+		result= recv_say( (struct request_say*) req, 0, NULL);
 		break;
 	case REQ_LIST:
 		if (sizeof(struct request_list) != len) {
@@ -786,6 +961,37 @@ int switchRequest(struct request* req, int len) {
 		}
 		result= recv_keepAlive( (struct request_keep_alive*) req );
 		break;
+
+	case REQ_S2S_JOIN:
+		if (sizeof(struct request_s2s_join) != len) {
+			snprintf(warning, BUFSIZE, "Received keepalive request; expected %d bytes but was %d bytes", sizeof(struct request_keep_alive), len);
+			logWarning(warning);
+			result= false;
+			break;
+		}
+		result= recv_s2s_join( (struct request_s2s_join*) req);
+		break;
+
+	case REQ_S2S_LEAVE:
+		if (sizeof(struct request_s2s_leave) != len) {
+			snprintf(warning, BUFSIZE, "Received s2s_leave request; expected %d bytes byt was %d bytes", sizeof(struct request_s2s_say), len);
+			logWarning(warning);
+			result= false;
+			break;
+		}
+		logReceived(REQ_S2S_LEAVE, "");
+		break;
+
+	case REQ_S2S_SAY:
+		if (sizeof(struct request_s2s_say) != len) {
+			snprintf(warning, BUFSIZE, "Received s2s_say request; expecrted %d bytes but was %d bytes", sizeof(struct request_s2s_say), len);
+			logWarning(warning);
+			result= false;
+			break;
+		}
+		result= recv_s2s_say( (struct request_s2s_say*) req);
+		break;
+
 	default:
 		snprintf(warning, BUFSIZE, "Received unknown request type %d of size %d bytes", req->req_type, len);
 		logWarning(warning);

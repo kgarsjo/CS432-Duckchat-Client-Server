@@ -84,7 +84,7 @@ struct request_say {
         char req_text[SAY_MAX];
 } packed;
 
-struct req_s2s_say {
+struct request_s2s_say {
 	request_t req_type; /* = REQ_S2S_SAY */
 	long long uid;
 	char req_username[USERNAME_MAX];
