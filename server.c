@@ -140,7 +140,7 @@ int main(int argc, char **argv) {
 		struct sockaddr_in *saddr= (struct sockaddr_in*) new_stringToAddr(ip);
 		saddr->sin_port= ntohs(saddr->sin_port);
 		std::string ip2= addrToString((struct sockaddr_in*)saddr);
-		vec_serverAddrs.push_back(ip);
+		vec_serverAddrs.push_back(ip2);
 	}
 
 	logInfo("Waiting for requests");	
