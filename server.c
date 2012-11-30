@@ -36,6 +36,7 @@
 
 // :: GLOBAL VALUES :: //
 int sockfd= 0;
+std::string myHost;
 int maxfd= 0;
 struct addrinfo *servinfo= NULL;
 struct sockaddr_storage lastUser;
@@ -106,9 +107,9 @@ int recv_who(struct request_who*);
 int removeLastUser();
 int removeUserFromChannel(const char*, const char*);
 int s2s_broadcast(struct request*, int);
-int s2s_forward(struct request*, int);
+int s2s_forward(struct request*, int, int);
 int s2s_send(const struct sockaddr*, size_t, struct request*, int);
-int s2s_sendToLast(struct request*, int);
+int s2s_sendToLast(struct request*, int, int);
 int sendMessage(const struct sockaddr*, size_t, struct text*, int);
 int sendToLast(struct text*, int);
 std::string setupConnection(char*, char*);
@@ -133,6 +134,9 @@ int main(int argc, char **argv) {
 	setupSocket(argv[1], argv[2]);
 	maxfd= sockfd;
 	logInfo("Setup Listening Socket");
+	
+	sprintf(format, "%s:%s", argv[1], argv[2]);
+	myHost= format;
 
 	for (i= 3; i < argc; i+= 2) {
 		char *inetRes= (char*) malloc(sizeof(char) * BUFSIZE);
@@ -145,8 +149,6 @@ int main(int argc, char **argv) {
 	}
 
 	logInfo("Waiting for requests");	
-
-	logInfo(format);
 	free(format);
 
 	int numbytes= 0;
@@ -426,7 +428,7 @@ int msg_s2s_join(const char *channel) {
 	req->req_type= htonl(REQ_S2S_JOIN);
 	strncpy(req->req_channel, channel, CHANNEL_MAX);
 
-	int result= s2s_forward((struct request*) req, sizeof(struct request_s2s_join));
+	int result= s2s_forward((struct request*) req, sizeof(struct request_s2s_join), REQ_S2S_JOIN);
 	if (result == true) {
 	logSentS2S(REQ_S2S_JOIN, channel);
 	}
@@ -446,7 +448,7 @@ int msg_s2s_leave(char *channel) {
 	req->req_type= htonl(REQ_S2S_LEAVE);
 	strncpy(req->req_channel, channel, CHANNEL_MAX);
 	
-	int result= s2s_sendToLast((struct request*) req, sizeof(struct request_s2s_join));
+	int result= s2s_sendToLast((struct request*) req, sizeof(struct request_s2s_join), REQ_S2S_LEAVE);
 	free(req);
 	return result;
 }
@@ -473,13 +475,13 @@ int msg_s2s_say(struct request_s2s_say* req) {
 	for (it= ii.first; it != ii.second; it++) {
 		if (it->first == chanStr && it->second != lastAddr) { 
 			struct sockaddr *sa= new_stringToAddr(it->second);
+			char *format= (char*) malloc(sizeof(char) * BUFSIZE);
+			sprintf(format, "%s to %s", myHost.c_str(), lastAddr.c_str());
+			logSentS2S(REQ_S2S_SAY, format);
 			result= s2s_send(sa, sizeof(struct sockaddr_in), (struct request*)req, sizeof(struct request_s2s_say)) || result;
 		}		
 	}
 
-	if (result == true) {
-		logSentS2S(REQ_S2S_SAY, req->req_text);
-	}
 	return result;
 }
 
@@ -859,10 +861,11 @@ int removeUserFromChannel(const char *username, const char *channel) {
 	return true;
 }
 
-int s2s_forward(struct request *msg, int msglen) {
+int s2s_forward(struct request *msg, int msglen, int type) {
 	struct sockaddr_in* saddr= (struct sockaddr_in*) &lastUser;
 	saddr->sin_port= ntohs(saddr->sin_port);
 	std::string lastAddr= addrToString((struct sockaddr_in*) &lastUser);
+	char *format= (char*) malloc(sizeof(char) * BUFSIZE);
 
 	unsigned int i, result= false;
 	if (vec_serverAddrs.size() == 0) {return false;}
@@ -872,8 +875,8 @@ int s2s_forward(struct request *msg, int msglen) {
 			char *format= (char*) malloc(sizeof(char) *BUFSIZE);
 			const struct sockaddr *sa= new_stringToAddr(vec_serverAddrs[i]);
 			result= s2s_send(sa, sizeof(struct sockaddr_in), msg, msglen) && result;
-			sprintf(format, "To %s", vec_serverAddrs[i].c_str());
-			logSentS2S(REQ_JOIN, format);
+			sprintf(format, "%s to %s", myHost.c_str(), vec_serverAddrs[i].c_str());
+			logSentS2S(type, format);
 			free(format);
 		}
 	}
@@ -889,10 +892,14 @@ int s2s_send(const struct sockaddr *addr, size_t addrlen, struct request *msg, i
 	return true;
 }
 
-int s2s_sendToLast(struct request *msg, int msglen) {
+int s2s_sendToLast(struct request *msg, int msglen, int type) {
 	struct sockaddr_in *saddr= (struct sockaddr_in*)&lastUser;
-	saddr->sin_port= htons(saddr->sin_port);
 	std::string addr= addrToString((struct sockaddr_in*)&lastUser);
+	saddr->sin_port= htons(saddr->sin_port);
+	char *format= (char*) malloc(sizeof(char) * BUFSIZE);
+	sprintf(format, "%s to %s", myHost.c_str(), addr.c_str());
+	
+	logSentS2S(type, format);
 	return s2s_send((struct sockaddr*)&lastUser, lastSize, msg, msglen);
 }
 
