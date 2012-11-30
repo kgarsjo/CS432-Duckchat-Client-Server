@@ -105,11 +105,12 @@ int recv_who(struct request_who*);
 int removeLastUser();
 int removeUserFromChannel(const char*, const char*);
 int s2s_broadcast(struct request*, int);
+int s2s_forward(struct request*, int);
 int s2s_send(const struct sockaddr*, size_t, struct request*, int);
 int s2s_sendToLast(struct request*, int);
 int sendMessage(const struct sockaddr*, size_t, struct text*, int);
 int sendToLast(struct text*, int);
-int setupConnection(char*, char*);
+std::string setupConnection(char*, char*);
 int setupSocket(char*, char*);
 int switchRequest(struct request*, int);
 
@@ -133,9 +134,9 @@ int main(int argc, char **argv) {
 	logInfo("Setup Listening Socket");
 
 	for (i= 3; i < argc; i+= 2) {
-		sprintf(format, "%s:%s", argv[i], argv[i+1]);
-		std::string addr= format;
-		vec_serverAddrs.push_back(addr);
+		char *inetRes= (char*) malloc(sizeof(char) * BUFSIZE);
+		std::string ip= setupConnection(argv[i], argv[i+1]);
+		vec_serverAddrs.push_back(ip);
 	}
 
 	logInfo("Waiting for requests");	
@@ -163,7 +164,7 @@ std::string addrToString(const struct sockaddr_in* addr) {
 	free(addrCstr);
 	
 	char port[6];
-	snprintf(port, 6, "%hu", addr->sin_port);
+	snprintf(port, 6, "%hu", ntohs(addr->sin_port));
 	ipStr= (ipStr + ":" + port);
 	return ipStr;
 }
@@ -387,7 +388,7 @@ int msg_s2s_join(const char *channel) {
 	req->req_type= htonl(REQ_S2S_JOIN);
 	strncpy(req->req_channel, channel, CHANNEL_MAX);
 
-	int result= s2s_broadcast((struct request*) req, sizeof(struct request_s2s_join));
+	int result= s2s_forward((struct request*) req, sizeof(struct request_s2s_join));
 	if (result == true) {
 	logSentS2S(REQ_S2S_JOIN, channel);
 	}
@@ -414,7 +415,7 @@ int msg_s2s_say(struct request_s2s_say* req) {
 	// Register the uid before broadcasting
 	set_sayList.insert(req->uid);
 
-	int result= s2s_broadcast((struct request*) req, sizeof(struct request_s2s_say));
+	int result= s2s_forward((struct request*) req, sizeof(struct request_s2s_say));
 	if (result == true) {
 		logSentS2S(REQ_S2S_SAY, req->req_text);
 	}
@@ -771,11 +772,25 @@ int removeUserFromChannel(const char *username, const char *channel) {
 }
 
 int s2s_broadcast(struct request *msg, int msglen) {
+	std::string lastAddr= addrToString((sockaddr_in*)&lastUser);
 	unsigned int i, result= true;
 	if (vec_serverAddrs.size() == 0) { return false; }
 	for (i= 0; i < vec_serverAddrs.size(); i++) {
 		const struct sockaddr *sa= new_stringToAddr(vec_serverAddrs[i]);
 		result= s2s_send(sa, sizeof(struct sockaddr_in), msg, msglen) && result;
+	}
+	return result;
+}
+
+int s2s_forward(struct request *msg, int msglen) {
+	std::string lastAddr= addrToString((struct sockaddr_in*) &lastUser);
+	unsigned int i, result= true;
+	if (vec_serverAddrs.size() == 0) {return false;}
+	for (i= 0; i < vec_serverAddrs.size(); i++) {
+		if (lastAddr != vec_serverAddrs[i]) {
+			const struct sockaddr *sa= new_stringToAddr(vec_serverAddrs[i]);
+			result= s2s_send(sa, sizeof(struct sockaddr_in), msg, msglen) && result;
+		}
 	}
 	return result;
 }
@@ -841,7 +856,7 @@ int setupSocket(char *addr, char *port) {
 	return true;
 }
 
-int setupConnection(char *addr, char *port) {
+std::string setupConnection(char *addr, char *port) {
 	int result= 0;
 	
 	// Setup hints
@@ -855,23 +870,10 @@ int setupConnection(char *addr, char *port) {
 	// Fetch address info struct
 	if ((result= getaddrinfo(addr, port, &hints, &sInfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
-		return -1;
+		return "";
 	}
 
-	// Create UDP Socket
-	sockfd= socket(sInfo->ai_family, sInfo->ai_socktype, sInfo->ai_protocol);
-	if (sockfd == -1) {
-		perror("socket: ");
-		return -1;
-	}
-
-	// Connect for simplicity
-	if ((result= connect(sockfd, sInfo->ai_addr, sInfo->ai_addrlen)) != 0) {
-		perror("connect: ");
-		return -1;
-	}
-
-	return sockfd;
+	return addrToString((struct sockaddr_in*)&sInfo->ai_addr);
 }
 
 int switchRequest(struct request* req, int len) {
