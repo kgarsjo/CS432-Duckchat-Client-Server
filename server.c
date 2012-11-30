@@ -135,7 +135,11 @@ int main(int argc, char **argv) {
 
 	for (i= 3; i < argc; i+= 2) {
 		char *inetRes= (char*) malloc(sizeof(char) * BUFSIZE);
-		std::string ip= setupConnection(argv[i], argv[i+1]);
+		sprintf(inetRes, "%s:%s", argv[i], argv[i+1]);
+		std::string ip= inetRes;
+		struct sockaddr_in *saddr= (struct sockaddr_in*) new_stringToAddr(ip);
+		saddr->sin_port= ntohs(saddr->sin_port);
+		std::string ip2= addrToString((struct sockaddr_in*)saddr);
 		vec_serverAddrs.push_back(ip);
 	}
 
@@ -164,7 +168,7 @@ std::string addrToString(const struct sockaddr_in* addr) {
 	free(addrCstr);
 	
 	char port[6];
-	snprintf(port, 6, "%hu", ntohs(addr->sin_port));
+	snprintf(port, 6, "%hu", addr->sin_port);
 	ipStr= (ipStr + ":" + port);
 	return ipStr;
 }
@@ -783,13 +787,20 @@ int s2s_broadcast(struct request *msg, int msglen) {
 }
 
 int s2s_forward(struct request *msg, int msglen) {
+	struct sockaddr_in* saddr= (struct sockaddr_in*) &lastUser;
+	saddr->sin_port= ntohs(saddr->sin_port);
 	std::string lastAddr= addrToString((struct sockaddr_in*) &lastUser);
+
 	unsigned int i, result= true;
 	if (vec_serverAddrs.size() == 0) {return false;}
 	for (i= 0; i < vec_serverAddrs.size(); i++) {
 		if (lastAddr != vec_serverAddrs[i]) {
+			char *format= (char*) malloc(sizeof(char) *BUFSIZE);
 			const struct sockaddr *sa= new_stringToAddr(vec_serverAddrs[i]);
 			result= s2s_send(sa, sizeof(struct sockaddr_in), msg, msglen) && result;
+			sprintf(format, "To %s", vec_serverAddrs[i].c_str());
+			logSentS2S(REQ_JOIN, format);
+			free(format);
 		}
 	}
 	return result;
