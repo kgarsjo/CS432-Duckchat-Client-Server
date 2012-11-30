@@ -48,6 +48,7 @@ std::map<std::string, std::string> 			map_addrToUser;
 std::map<std::string, std::string>			map_userToAddr;
 std::multimap<std::string, std::string>		map_userToChan;
 std::multimap<std::string, std::string> 	map_chanToUser;
+std::multimap<std::string, std::string>		map_chanToServer;
 
 char buf[1024];
 
@@ -176,6 +177,39 @@ std::string addrToString(const struct sockaddr_in* addr) {
 std::string addrToUser(const struct sockaddr_in* addr) {
 	std::string addrStr= addrToString(addr);
 	return map_addrToUser[addrStr];
+}
+
+int addServerToChannel(std::string saddr, const char *channel) {
+	
+	std::string chanStr= channel;
+	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> ii;
+	std::multimap<std::string,std::string>::iterator it;
+
+	// Check for channel dups in userToChan; add if none
+	ii= map_chanToServer.equal_range(chanStr);
+	unsigned int x= map_chanToServer.size();
+	for (it= ii.first; it != ii.second; it++) {
+		if (it->first == chanStr && it->second == saddr) { 
+			return false;
+		}		
+	}
+	map_chanToServer.insert(std::pair<std::string, std::string>(chanStr, saddr));
+	return true;
+}
+
+int removeServerFromChannel(std::string saddr, char *channel) {
+	std::string chanStr= channel;
+	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> ii;
+	std::multimap<std::string,std::string>::iterator it;
+
+	ii= map_chanToServer.equal_range(chanStr);
+	for (it= ii.first; it != ii.second; it++) {
+		if (it->first == chanStr && it->second == saddr) { 
+			map_chanToServer.erase(it);
+			return true;
+		}		
+	}
+	return false;
 }
 
 int addUser(const char* username) {
@@ -396,6 +430,11 @@ int msg_s2s_join(const char *channel) {
 	if (result == true) {
 	logSentS2S(REQ_S2S_JOIN, channel);
 	}
+
+	unsigned int i;
+	for (i= 0; i < vec_serverAddrs.size(); i++) {
+		addServerToChannel(vec_serverAddrs[i], channel);
+	}
 	free(req);
 	return result;
 }
@@ -418,8 +457,26 @@ int msg_s2s_say(struct request_s2s_say* req) {
 	}
 	// Register the uid before broadcasting
 	set_sayList.insert(req->uid);
+	int result= false;
+	char *chan= (char*) malloc(sizeof(char) * BUFSIZE);
+	sprintf(chan, "%s", req->req_channel);
 
-	int result= s2s_forward((struct request*) req, sizeof(struct request_s2s_say));
+	std::string chanStr= chan;
+	struct sockaddr_in *sin= (sockaddr_in*) &lastUser;
+	sin->sin_port= ntohs(sin->sin_port);
+	std::string lastAddr= addrToString(sin);
+	std::pair<std::multimap<std::string,std::string>::iterator,std::multimap<std::string,std::string>::iterator> ii;
+	std::multimap<std::string,std::string>::iterator it;
+
+	// Check for channel dups in userToChan; add if none
+	ii= map_chanToServer.equal_range(chanStr);
+	for (it= ii.first; it != ii.second; it++) {
+		if (it->first == chanStr && it->second != lastAddr) { 
+			struct sockaddr *sa= new_stringToAddr(it->second);
+			result= s2s_send(sa, sizeof(struct sockaddr_in), (struct request*)req, sizeof(struct request_s2s_say)) || result;
+		}		
+	}
+
 	if (result == true) {
 		logSentS2S(REQ_S2S_SAY, req->req_text);
 	}
@@ -617,11 +674,31 @@ int recv_logout(struct request_logout *req) {
 int recv_s2s_join(struct request_s2s_join *req) {
 	logReceived(REQ_S2S_JOIN, req->req_channel);
 	std::string chan= req->req_channel;
+	struct sockaddr_in *sa= (struct sockaddr_in*) &lastUser;
+	sa->sin_port= ntohs(sa->sin_port);
+	std::string saddr= addrToString((struct sockaddr_in*) &lastUser);
+	sa->sin_port= htons(sa->sin_port);
+
+	addServerToChannel(saddr, req->req_channel);
 	if (set_chanList.find(chan) == set_chanList.end()) {
 		set_chanList.insert(chan);
 		return msg_s2s_join(req->req_channel);
 	}
 	return false;
+}
+
+int recv_s2s_leave(struct request_s2s_leave *req) {
+	if (req == NULL) { return false; }
+	int result= true;
+
+	logReceived(REQ_S2S_LEAVE, "");
+
+	struct sockaddr_in* sin= (struct sockaddr_in*) &lastUser;
+	sin->sin_port= ntohs(sin->sin_port);
+	std::string saddr= addrToString(sin);
+	result= removeServerFromChannel(saddr, req->req_channel);
+
+	return result;
 }
 
 int recv_s2s_say(struct request_s2s_say *req) {
@@ -632,6 +709,9 @@ int recv_s2s_say(struct request_s2s_say *req) {
 	if (set_sayList.find(req->uid) == set_sayList.end()) {	
 		logReceived(REQ_S2S_SAY, req->req_text);
 		int result= recv_say(sreq, req->uid, req->req_username);
+		if (!result) {
+			msg_s2s_leave(req->req_channel);
+		}
 		free(sreq);
 		return result;
 	}
@@ -641,6 +721,7 @@ int recv_s2s_say(struct request_s2s_say *req) {
 
 int recv_say(struct request_say *req, long long uid, char *uname) {
 	char *msg= (char*) malloc(BUFSIZE * sizeof(char));
+	int result= false;
 	if (uname == NULL) {
 		std::string fromUser= addrToUser((struct sockaddr_in*)&lastUser);
 		uname= (char*) malloc(sizeof(char) * BUFSIZE);
@@ -675,11 +756,12 @@ int recv_say(struct request_say *req, long long uid, char *uname) {
 		sa.sin_family= AF_INET;
 
 		msg_say(req->req_channel, uname, req->req_text, (struct sockaddr*)&sa);
+		result= true;
 		free(tok);
 	}
 
 	if (uid == 0) {
-		msg_s2s_say(uname, req->req_channel, req->req_text);
+		result= msg_s2s_say(uname, req->req_channel, req->req_text) || result;
 	} else {
 		struct request_s2s_say* sreq= (struct request_s2s_say*) malloc(sizeof(struct request_s2s_say));
 		strncpy(sreq->req_username, uname, USERNAME_MAX);
@@ -687,7 +769,7 @@ int recv_say(struct request_say *req, long long uid, char *uname) {
 		strncpy(sreq->req_text, req->req_text, SAY_MAX);
 		sreq->uid= uid;
 		sreq->req_type= htonl(REQ_S2S_SAY);
-		msg_s2s_say(sreq);
+		result= msg_s2s_say(sreq) || result;
 		free(sreq);
 	}
 
@@ -696,7 +778,7 @@ int recv_say(struct request_say *req, long long uid, char *uname) {
 		// for every user in that channel...
 	
 			// sendto their stored address (hopefully)...
-	return false; //msg_say(req->;
+	return result; //msg_say(req->;
 }
 
 int recv_who(struct request_who *req) {
@@ -775,26 +857,16 @@ int removeUserFromChannel(const char *username, const char *channel) {
 	return true;
 }
 
-int s2s_broadcast(struct request *msg, int msglen) {
-	std::string lastAddr= addrToString((sockaddr_in*)&lastUser);
-	unsigned int i, result= true;
-	if (vec_serverAddrs.size() == 0) { return false; }
-	for (i= 0; i < vec_serverAddrs.size(); i++) {
-		const struct sockaddr *sa= new_stringToAddr(vec_serverAddrs[i]);
-		result= s2s_send(sa, sizeof(struct sockaddr_in), msg, msglen) && result;
-	}
-	return result;
-}
-
 int s2s_forward(struct request *msg, int msglen) {
 	struct sockaddr_in* saddr= (struct sockaddr_in*) &lastUser;
 	saddr->sin_port= ntohs(saddr->sin_port);
 	std::string lastAddr= addrToString((struct sockaddr_in*) &lastUser);
 
-	unsigned int i, result= true;
+	unsigned int i, result= false;
 	if (vec_serverAddrs.size() == 0) {return false;}
 	for (i= 0; i < vec_serverAddrs.size(); i++) {
 		if (lastAddr != vec_serverAddrs[i]) {
+			result= true;
 			char *format= (char*) malloc(sizeof(char) *BUFSIZE);
 			const struct sockaddr *sa= new_stringToAddr(vec_serverAddrs[i]);
 			result= s2s_send(sa, sizeof(struct sockaddr_in), msg, msglen) && result;
@@ -816,6 +888,9 @@ int s2s_send(const struct sockaddr *addr, size_t addrlen, struct request *msg, i
 }
 
 int s2s_sendToLast(struct request *msg, int msglen) {
+	struct sockaddr_in *saddr= (struct sockaddr_in*)&lastUser;
+	saddr->sin_port= htons(saddr->sin_port);
+	std::string addr= addrToString((struct sockaddr_in*)&lastUser);
 	return s2s_send((struct sockaddr*)&lastUser, lastSize, msg, msglen);
 }
 
@@ -992,7 +1067,7 @@ int switchRequest(struct request* req, int len) {
 			result= false;
 			break;
 		}
-		logReceived(REQ_S2S_LEAVE, "");
+		result= recv_s2s_leave( (struct request_s2s_leave*) req);
 		break;
 
 	case REQ_S2S_SAY:
