@@ -715,6 +715,8 @@ int recv_s2s_say(struct request_s2s_say *req) {
 		free(sreq);
 		return result;
 	}
+	struct sockaddr_in *sin= (struct sockaddr_in*) &lastUser;
+	sin->sin_port= ntohs(sin->sin_port);
 	msg_s2s_leave(req->req_channel);
 	return false;
 }
